@@ -29,7 +29,7 @@
 - [x] Make `harness run` start the in-repo hardened runtime and report startup validation failures.
 - [x] Add stale-design regression tests for old submodule and Elixir runtime references.
 - [x] Merge the hardened runtime branch into `main`.
-- [ ] Add a runtime conformance matrix mapped to upstream SPEC sections.
+- [x] Add a runtime conformance matrix mapped to upstream SPEC sections.
 - [ ] Replace the minimal YAML subset parser with either a stricter documented subset or an approved YAML dependency.
 - [ ] Add workflow reload tests for changed polling interval, concurrency, workspace root, hooks, and prompt content.
 - [ ] Add filesystem-watch or defensive per-tick reload coverage for missed mtime changes.
