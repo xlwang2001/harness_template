@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import logging
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import RLock
@@ -11,6 +12,7 @@ from typing import Protocol
 from .agent import AgentRunnerError, CodexAgentRunner
 from .models import Issue, RetryEntry, RunningEntry, RuntimeConfig, RuntimeState
 from .prompt import render_prompt
+from .runtime_logging import emit_runtime_log
 from .tracker import IssueTrackerClient, TrackerError
 from .workspace import WorkspaceManager
 
@@ -28,6 +30,7 @@ class Orchestrator:
         agent_runner: CodexAgentRunner,
         prompt_template: str,
         executor: "Submitter | None" = None,
+        logger: logging.Logger | None = None,
     ):
         self.config = config
         self.tracker = tracker
@@ -35,6 +38,7 @@ class Orchestrator:
         self.agent_runner = agent_runner
         self.prompt_template = prompt_template
         self.executor = executor or ThreadPoolExecutor(max_workers=config.max_concurrent_agents)
+        self.logger = logger or logging.getLogger("harness.runtime")
         self._lock = RLock()
         self.state = RuntimeState(
             poll_interval_ms=config.polling_interval_ms,
@@ -52,6 +56,15 @@ class Orchestrator:
                 self.tracker.config = config
             if hasattr(self.agent_runner, "config"):
                 self.agent_runner.config = config
+            emit_runtime_log(
+                self.logger,
+                "config_applied",
+                workflow=config.workflow_path,
+                poll_interval_ms=config.polling_interval_ms,
+                max_concurrent_agents=config.max_concurrent_agents,
+                workspace_root=config.workspace_root,
+                secrets=(config.tracker_api_key,),
+            )
 
     def eligible(self, issue: Issue) -> bool:
         if not issue.id or not issue.identifier or not issue.title or not issue.state:
@@ -86,24 +99,45 @@ class Orchestrator:
         )
 
     def tick_once(self) -> None:
+        emit_runtime_log(self.logger, "tick_started", running=len(self.state.running), retrying=len(self.state.retry_attempts), secrets=(self.config.tracker_api_key,))
         self.reconcile_running()
         self.process_due_retries()
         try:
             candidates = self.tracker.fetch_candidate_issues()
-        except TrackerError:
+        except TrackerError as exc:
+            emit_runtime_log(self.logger, "candidate_fetch_failed", level=logging.WARNING, error=exc, secrets=(self.config.tracker_api_key,))
             return
         for issue in self.sort_for_dispatch(candidates):
             if len(self.state.running) >= self.config.max_concurrent_agents:
                 break
             if self.eligible(issue):
                 self.dispatch_issue(issue, attempt=None)
+        emit_runtime_log(self.logger, "tick_completed", running=len(self.state.running), retrying=len(self.state.retry_attempts), secrets=(self.config.tracker_api_key,))
 
     def dispatch_issue(self, issue: Issue, attempt: int | None) -> None:
         with self._lock:
             if not self.eligible(issue):
+                emit_runtime_log(
+                    self.logger,
+                    "dispatch_skipped",
+                    issue_id=issue.id,
+                    issue_identifier=issue.identifier,
+                    state=issue.state,
+                    reason="not_eligible",
+                    secrets=(self.config.tracker_api_key,),
+                )
                 return
             self.state.claimed.add(issue.id)
             self.state.running[issue.id] = RunningEntry(issue=issue, started_at=datetime.now(timezone.utc))
+            emit_runtime_log(
+                self.logger,
+                "dispatch_started",
+                issue_id=issue.id,
+                issue_identifier=issue.identifier,
+                state=issue.state,
+                attempt=attempt,
+                secrets=(self.config.tracker_api_key,),
+            )
         future = self.executor.submit(self._run_issue, issue, attempt)
         future.add_done_callback(lambda done, issue_id=issue.id: self._finish_future(issue_id, done))
 
@@ -113,9 +147,37 @@ class Orchestrator:
             self.state.running[issue.id].workspace_path = workspace.path
             self.workspace_manager.run_hook("before_run", workspace, fatal=True)
             prompt = render_prompt(self.prompt_template, issue, attempt)
+            emit_runtime_log(
+                self.logger,
+                "agent_session_started",
+                issue_id=issue.id,
+                issue_identifier=issue.identifier,
+                workspace=workspace.path,
+                attempt=attempt,
+                secrets=(self.config.tracker_api_key,),
+            )
             self.agent_runner.run_turn(issue, prompt, workspace.path, attempt)
+            emit_runtime_log(
+                self.logger,
+                "agent_session_completed",
+                issue_id=issue.id,
+                issue_identifier=issue.identifier,
+                workspace=workspace.path,
+                attempt=attempt,
+                secrets=(self.config.tracker_api_key,),
+            )
             self.workspace_manager.run_hook("after_run", workspace, fatal=False)
         except (AgentRunnerError, Exception) as exc:
+            emit_runtime_log(
+                self.logger,
+                "agent_session_failed",
+                level=logging.ERROR,
+                issue_id=issue.id,
+                issue_identifier=issue.identifier,
+                attempt=attempt,
+                error=exc,
+                secrets=(self.config.tracker_api_key,),
+            )
             raise RuntimeError(str(exc)) from exc
 
     def _finish_future(self, issue_id: str, future: Future[None]) -> None:
@@ -133,8 +195,24 @@ class Orchestrator:
                 return
             if normal:
                 self.state.completed.add(issue_id)
+                emit_runtime_log(
+                    self.logger,
+                    "worker_completed",
+                    issue_id=issue_id,
+                    issue_identifier=entry.issue.identifier,
+                    secrets=(self.config.tracker_api_key,),
+                )
                 self.schedule_retry(entry.issue, attempt=1, error=None, continuation=True)
             else:
+                emit_runtime_log(
+                    self.logger,
+                    "worker_failed",
+                    level=logging.ERROR,
+                    issue_id=issue_id,
+                    issue_identifier=entry.issue.identifier,
+                    error=error,
+                    secrets=(self.config.tracker_api_key,),
+                )
                 self.schedule_retry(entry.issue, attempt=1, error=error, continuation=False)
 
     def schedule_retry(self, issue: Issue, *, attempt: int, error: str | None, continuation: bool = False) -> None:
@@ -146,11 +224,30 @@ class Orchestrator:
             due_at_ms=monotonic_ms() + delay,
             error=error,
         )
+        emit_runtime_log(
+            self.logger,
+            "retry_scheduled",
+            issue_id=issue.id,
+            issue_identifier=issue.identifier,
+            attempt=attempt,
+            due_at_ms=self.state.retry_attempts[issue.id].due_at_ms,
+            error=error,
+            continuation=continuation,
+            secrets=(self.config.tracker_api_key,),
+        )
 
     def retry_due(self, issue_id: str) -> None:
         retry = self.state.retry_attempts.pop(issue_id, None)
         if not retry:
             return
+        emit_runtime_log(
+            self.logger,
+            "retry_due",
+            issue_id=issue_id,
+            issue_identifier=retry.identifier,
+            attempt=retry.attempt,
+            secrets=(self.config.tracker_api_key,),
+        )
         try:
             candidates = self.tracker.fetch_candidate_issues()
         except TrackerError:
@@ -160,6 +257,14 @@ class Orchestrator:
         issue = next((candidate for candidate in candidates if candidate.id == issue_id), None)
         if issue is None:
             self.state.claimed.discard(issue_id)
+            emit_runtime_log(
+                self.logger,
+                "retry_released",
+                issue_id=issue_id,
+                issue_identifier=retry.identifier,
+                reason="not_candidate",
+                secrets=(self.config.tracker_api_key,),
+            )
             return
         self.state.claimed.discard(issue_id)
         if self.eligible(issue):
@@ -177,9 +282,11 @@ class Orchestrator:
         self.reconcile_stalled()
         if not self.state.running:
             return
+        emit_runtime_log(self.logger, "reconciliation_started", running=len(self.state.running), secrets=(self.config.tracker_api_key,))
         try:
             refreshed = self.tracker.fetch_issue_states_by_ids(list(self.state.running))
-        except TrackerError:
+        except TrackerError as exc:
+            emit_runtime_log(self.logger, "reconciliation_failed", level=logging.WARNING, error=exc, secrets=(self.config.tracker_api_key,))
             return
         for issue in refreshed:
             if issue.id not in self.state.running:
@@ -188,11 +295,14 @@ class Orchestrator:
                 self.workspace_manager.cleanup_for_issue(issue.identifier)
                 self.state.running.pop(issue.id, None)
                 self.state.claimed.discard(issue.id)
+                emit_runtime_log(self.logger, "reconciliation_stopped", issue_id=issue.id, issue_identifier=issue.identifier, state=issue.state, cleanup=True, secrets=(self.config.tracker_api_key,))
             elif self.config.is_active_state(issue.state):
                 self.state.running[issue.id].issue = issue
             else:
                 self.state.running.pop(issue.id, None)
                 self.state.claimed.discard(issue.id)
+                emit_runtime_log(self.logger, "reconciliation_stopped", issue_id=issue.id, issue_identifier=issue.identifier, state=issue.state, cleanup=False, secrets=(self.config.tracker_api_key,))
+        emit_runtime_log(self.logger, "reconciliation_completed", running=len(self.state.running), secrets=(self.config.tracker_api_key,))
 
     def reconcile_stalled(self) -> None:
         if self.config.codex_stall_timeout_ms <= 0:
@@ -202,15 +312,18 @@ class Orchestrator:
             marker = entry.last_codex_timestamp or entry.started_at
             elapsed_ms = int((now - marker).total_seconds() * 1000)
             if elapsed_ms > self.config.codex_stall_timeout_ms:
+                emit_runtime_log(self.logger, "session_stalled", issue_id=issue_id, issue_identifier=entry.issue.identifier, elapsed_ms=elapsed_ms, secrets=(self.config.tracker_api_key,))
                 self.finish_issue(issue_id, normal=False, error="stalled")
 
     def startup_terminal_cleanup(self) -> None:
         try:
             terminal_issues = self.tracker.fetch_issues_by_states(list(self.config.terminal_states))
-        except TrackerError:
+        except TrackerError as exc:
+            emit_runtime_log(self.logger, "startup_cleanup_failed", level=logging.WARNING, error=exc, secrets=(self.config.tracker_api_key,))
             return
         for issue in terminal_issues:
             self.workspace_manager.cleanup_for_issue(issue.identifier)
+        emit_runtime_log(self.logger, "startup_cleanup_completed", cleaned=len(terminal_issues), secrets=(self.config.tracker_api_key,))
 
     def snapshot(self) -> dict[str, object]:
         return {

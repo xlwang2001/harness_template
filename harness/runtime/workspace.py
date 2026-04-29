@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import logging
 from pathlib import Path
 
 from .models import RuntimeConfig, Workspace
+from .runtime_logging import emit_runtime_log
 
 
 class WorkspaceError(RuntimeError):
@@ -20,9 +22,10 @@ def sanitize_workspace_key(identifier: str) -> str:
 
 
 class WorkspaceManager:
-    def __init__(self, config: RuntimeConfig):
+    def __init__(self, config: RuntimeConfig, logger: logging.Logger | None = None):
         self.config = config
         self.root = config.workspace_root.resolve()
+        self.logger = logger or logging.getLogger("harness.runtime")
 
     def path_for_issue(self, identifier: str) -> Path:
         path = (self.root / sanitize_workspace_key(identifier)).resolve()
@@ -37,6 +40,14 @@ class WorkspaceManager:
         created_now = not path.exists()
         path.mkdir(parents=True, exist_ok=True)
         workspace = Workspace(path=path, workspace_key=path.name, created_now=created_now)
+        emit_runtime_log(
+            self.logger,
+            "workspace_prepared",
+            workspace=workspace.path,
+            workspace_key=workspace.workspace_key,
+            created_now=workspace.created_now,
+            secrets=(self.config.tracker_api_key,),
+        )
         if created_now:
             self.run_hook("after_create", workspace, fatal=True)
         return workspace
@@ -45,6 +56,13 @@ class WorkspaceManager:
         script = self.config.hooks.get(name)
         if not script:
             return
+        emit_runtime_log(
+            self.logger,
+            "hook_started",
+            hook=name,
+            workspace=workspace.path,
+            secrets=(self.config.tracker_api_key,),
+        )
         try:
             subprocess.run(
                 ["sh", "-lc", script],
@@ -54,7 +72,24 @@ class WorkspaceManager:
                 text=True,
                 capture_output=True,
             )
+            emit_runtime_log(
+                self.logger,
+                "hook_completed",
+                hook=name,
+                workspace=workspace.path,
+                secrets=(self.config.tracker_api_key,),
+            )
         except (subprocess.SubprocessError, OSError) as exc:
+            emit_runtime_log(
+                self.logger,
+                "hook_failed",
+                level=logging.ERROR if fatal else logging.WARNING,
+                hook=name,
+                workspace=workspace.path,
+                fatal=fatal,
+                error=exc,
+                secrets=(self.config.tracker_api_key,),
+            )
             if fatal:
                 raise WorkspaceError(f"{name} hook failed: {exc}") from exc
 
@@ -66,6 +101,13 @@ class WorkspaceManager:
         self.run_hook("before_remove", workspace, fatal=False)
         ensure_contained(self.root, path)
         shutil.rmtree(path)
+        emit_runtime_log(
+            self.logger,
+            "workspace_removed",
+            workspace=path,
+            workspace_key=workspace.workspace_key,
+            secrets=(self.config.tracker_api_key,),
+        )
 
 
 def ensure_contained(root: Path, path: Path) -> None:

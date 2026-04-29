@@ -33,8 +33,8 @@
 - [x] Replace the minimal YAML subset parser with either a stricter documented subset or an approved YAML dependency.
 - [x] Add workflow reload tests for changed polling interval, concurrency, workspace root, hooks, and prompt content.
 - [x] Add filesystem-watch or defensive per-tick reload coverage for missed mtime changes.
-- [ ] Add structured log records for startup, reload, validation failure, dispatch, retry, reconciliation, hook execution, and session lifecycle.
-- [ ] Add log redaction tests for tracker API tokens and secret environment values.
+- [x] Add structured log records for startup, reload, validation failure, dispatch, retry, reconciliation, hook execution, and session lifecycle.
+- [x] Add log redaction tests for tracker API tokens and secret environment values.
 - [ ] Add per-state concurrency dispatch tests.
 - [ ] Add blocker normalization tests for multiple Linear inverse relation shapes.
 - [ ] Add retry backoff cap tests for repeated abnormal exits.
