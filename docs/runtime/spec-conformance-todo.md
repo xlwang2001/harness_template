@@ -35,11 +35,11 @@
 - [x] Add filesystem-watch or defensive per-tick reload coverage for missed mtime changes.
 - [x] Add structured log records for startup, reload, validation failure, dispatch, retry, reconciliation, hook execution, and session lifecycle.
 - [x] Add log redaction tests for tracker API tokens and secret environment values.
-- [ ] Add per-state concurrency dispatch tests.
-- [ ] Add blocker normalization tests for multiple Linear inverse relation shapes.
-- [ ] Add retry backoff cap tests for repeated abnormal exits.
-- [ ] Add continuation retry tests that re-fetch active candidates and release claims when issues disappear.
-- [ ] Add reconciliation tests for non-active non-terminal states.
+- [x] Add per-state concurrency dispatch tests.
+- [x] Add blocker normalization tests for multiple Linear inverse relation shapes.
+- [x] Add retry backoff cap tests for repeated abnormal exits.
+- [x] Add continuation retry tests that re-fetch active candidates and release claims when issues disappear.
+- [x] Add reconciliation tests for non-active non-terminal states.
 - [ ] Add startup terminal cleanup tests for hook behavior and cleanup failures.
 - [ ] Add hook timeout tests for `after_create`, `before_run`, `after_run`, and `before_remove`.
 - [ ] Add tests for existing non-directory workspace paths.

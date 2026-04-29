@@ -57,6 +57,28 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(issue.labels, ("backend",))
         self.assertEqual(issue.blocked_by[0].identifier, "ABC-0")
 
+    def test_normalizes_multiple_blocker_shapes_and_ignores_unrelated_relations(self):
+        issue = normalize_linear_issue(
+            {
+                "id": "id2",
+                "identifier": "ABC-2",
+                "title": "Title",
+                "state": {"name": "Todo"},
+                "labels": {"nodes": [{"name": "Backend"}, {"name": "URGENT"}]},
+                "inverseRelations": {
+                    "nodes": [
+                        {"type": "blocks", "issue": {"id": "id0", "identifier": "ABC-0", "state": {"name": "Done"}}},
+                        {"type": "blocks", "issue": {"id": "id1", "identifier": "ABC-1"}},
+                        {"type": "related", "issue": {"id": "id9", "identifier": "ABC-9", "state": {"name": "Todo"}}},
+                    ]
+                },
+            }
+        )
+        self.assertEqual(issue.labels, ("backend", "urgent"))
+        self.assertEqual([blocker.identifier for blocker in issue.blocked_by], ["ABC-0", "ABC-1"])
+        self.assertEqual(issue.blocked_by[0].state, "Done")
+        self.assertIsNone(issue.blocked_by[1].state)
+
     def test_fetch_issues_by_empty_states_skips_api(self):
         client = LinearClient(config())
         with patch.object(client, "_graphql") as graphql:

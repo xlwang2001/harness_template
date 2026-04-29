@@ -204,3 +204,86 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual(orchestrator.workspace_manager.root, (root / "new-workspaces").resolve())
             self.assertEqual(orchestrator.config.hooks["before_run"], "echo before")
             self.assertEqual(orchestrator.prompt_template, "new {{ issue.identifier }}")
+
+    def test_per_state_concurrency_limits_dispatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "max_concurrent_agents": 3,
+                    "max_concurrent_agents_by_state": {"todo": 1, "in progress": 2},
+                }
+            )
+            tracker = FakeTracker(
+                candidates=[
+                    issue("TODO-1", state="Todo"),
+                    issue("TODO-2", state="Todo"),
+                    issue("IP-1", state="In Progress"),
+                    issue("IP-2", state="In Progress"),
+                ]
+            )
+            runner = BlockingRunner()
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=executor)
+                orchestrator.tick_once()
+                self.assertTrue(runner.started.wait(timeout=2))
+                self.assertEqual(len(orchestrator.state.running), 3)
+                self.assertEqual(sum(1 for entry in orchestrator.state.running.values() if entry.issue.state == "Todo"), 1)
+                self.assertEqual(sum(1 for entry in orchestrator.state.running.values() if entry.issue.state == "In Progress"), 2)
+                runner.release.set()
+
+    def test_global_concurrency_caps_state_specific_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "max_concurrent_agents": 2,
+                    "max_concurrent_agents_by_state": {"todo": 5},
+                }
+            )
+            tracker = FakeTracker(candidates=[issue("TODO-1"), issue("TODO-2"), issue("TODO-3")])
+            runner = BlockingRunner()
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=executor)
+                orchestrator.tick_once()
+                self.assertTrue(runner.started.wait(timeout=2))
+                self.assertEqual(len(orchestrator.state.running), 2)
+                runner.release.set()
+
+    def test_retry_backoff_is_capped_for_repeated_abnormal_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(**{**config(root).__dict__, "max_retry_backoff_ms": 25000})
+            orchestrator = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            candidate = issue("ABC-6")
+            orchestrator.schedule_retry(candidate, attempt=1, error="failed")
+            first_delay = orchestrator.state.retry_attempts[candidate.id].due_at_ms
+            orchestrator.schedule_retry(candidate, attempt=10, error="failed")
+            capped_delay = orchestrator.state.retry_attempts[candidate.id].due_at_ms
+            self.assertLessEqual(capped_delay - first_delay, 25000)
+
+    def test_continuation_retry_releases_claim_when_candidate_disappears(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = issue("ABC-7")
+            orchestrator, _ = self.build(Path(directory), FakeTracker(candidates=[]))
+            orchestrator.state.claimed.add(candidate.id)
+            orchestrator.schedule_retry(candidate, attempt=1, error=None, continuation=True)
+            orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
+            orchestrator.process_due_retries()
+            self.assertNotIn(candidate.id, orchestrator.state.claimed)
+            self.assertNotIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_reconcile_non_active_non_terminal_stops_without_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paused = issue("ABC-8", state="Human Review")
+            orchestrator, _ = self.build(root, FakeTracker(states=[paused]))
+            workspace = orchestrator.workspace_manager.create_for_issue(paused.identifier)
+            orchestrator.state.claimed.add(paused.id)
+            orchestrator.state.running[paused.id] = RunningEntry(issue=issue("ABC-8", state="In Progress"), started_at=datetime.now(timezone.utc), workspace_path=workspace.path)
+            orchestrator.reconcile_running()
+            self.assertTrue(workspace.path.exists())
+            self.assertNotIn(paused.id, orchestrator.state.running)
+            self.assertNotIn(paused.id, orchestrator.state.claimed)
