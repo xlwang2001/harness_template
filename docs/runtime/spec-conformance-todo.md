@@ -1,0 +1,62 @@
+# SPEC Conformance TODO
+
+- [x] Create the initial harness scaffold repository.
+- [x] Save the original scaffold implementation plan in the repository root.
+- [x] Add target-repo templates for `AGENTS.md`, `WORKFLOW.md`, docs, skills, hooks, PR template, and CI.
+- [x] Add human-facing docs for adoption, operating model, issue writing, review, knowledge base, trust and safety, and maintenance.
+- [x] Add ADRs for repo knowledge, avoiding rigid state machines, superseded submodule reuse, and owning the hardened SPEC runtime.
+- [x] Implement `harness init` with profiles, dry-run, force overwrite, and overwrite protection.
+- [x] Implement `harness validate` with docs, workflow, and agents validators.
+- [x] Add tiny CLI and tiny webapp examples.
+- [x] Add scaffold tests for template copying, CLI init, CLI validate, and generated repo validation.
+- [x] Add `make validate`, `make test`, `make runtime-check`, and `make stale-design-check`.
+- [x] Remove operational dependency on upstream Symphony submodule and Elixir runtime.
+- [x] Add hardened runtime package under `harness/runtime/`.
+- [x] Implement workflow loading with optional front matter and prompt body parsing.
+- [x] Implement runtime config defaults, `$VAR` resolution, path normalization, and dispatch preflight validation.
+- [x] Implement `WorkflowReloader` with last-known-good config preservation.
+- [x] Implement strict prompt rendering for `issue` and `attempt` variables.
+- [x] Implement normalized issue, blocker, workspace, retry, running, and runtime state models.
+- [x] Implement workspace key sanitization and root containment checks.
+- [x] Implement workspace creation, reuse, cleanup, and lifecycle hook execution.
+- [x] Implement Linear-compatible tracker client interfaces and issue normalization.
+- [x] Add Linear tests for empty state fetch, pagination, malformed payloads, GraphQL errors, HTTP errors, and transport errors.
+- [x] Implement orchestrator eligibility, priority sorting, bounded concurrency, reconciliation, stall detection, retry scheduling, and runtime snapshots.
+- [x] Make issue dispatch non-blocking through an executor boundary.
+- [x] Implement due retry processing in the service loop.
+- [x] Keep Codex app-server behavior behind `CodexAgentRunner`.
+- [x] Enforce workspace containment before Codex command launch.
+- [x] Make `harness run` start the in-repo hardened runtime and report startup validation failures.
+- [x] Add stale-design regression tests for old submodule and Elixir runtime references.
+- [x] Merge the hardened runtime branch into `main`.
+- [ ] Add a runtime conformance matrix mapped to upstream SPEC sections.
+- [ ] Replace the minimal YAML subset parser with either a stricter documented subset or an approved YAML dependency.
+- [ ] Add workflow reload tests for changed polling interval, concurrency, workspace root, hooks, and prompt content.
+- [ ] Add filesystem-watch or defensive per-tick reload coverage for missed mtime changes.
+- [ ] Add structured log records for startup, reload, validation failure, dispatch, retry, reconciliation, hook execution, and session lifecycle.
+- [ ] Add log redaction tests for tracker API tokens and secret environment values.
+- [ ] Add per-state concurrency dispatch tests.
+- [ ] Add blocker normalization tests for multiple Linear inverse relation shapes.
+- [ ] Add retry backoff cap tests for repeated abnormal exits.
+- [ ] Add continuation retry tests that re-fetch active candidates and release claims when issues disappear.
+- [ ] Add reconciliation tests for non-active non-terminal states.
+- [ ] Add startup terminal cleanup tests for hook behavior and cleanup failures.
+- [ ] Add hook timeout tests for `after_create`, `before_run`, `after_run`, and `before_remove`.
+- [ ] Add tests for existing non-directory workspace paths.
+- [ ] Implement cancellation or termination handling for active workers when tracker state becomes terminal or non-active.
+- [ ] Track worker futures in runtime state so reconciliation can cancel or mark active runs deterministically.
+- [ ] Add runtime shutdown handling for keyboard interrupt and process termination.
+- [ ] Add snapshot tests for running rows, retry rows, aggregate token totals, runtime seconds, and rate limits.
+- [ ] Implement token and rate-limit aggregation from Codex app-server events.
+- [ ] Implement a real Codex app-server protocol client behind `CodexAgentRunner`.
+- [ ] Add Codex protocol tests for startup handshake, thread creation, turn streaming, completion, failure, cancellation, timeout, and subprocess exit.
+- [ ] Add user-input-required handling policy and tests so runs never stall indefinitely.
+- [ ] Add approval/tool-call handling policy tests for supported and unsupported dynamic tool calls.
+- [ ] Add optional `linear_graphql` client-side tool extension.
+- [ ] Add tests for `linear_graphql` valid queries, invalid inputs, multiple operations, missing auth, GraphQL errors, and transport failures.
+- [ ] Add optional HTTP status API for `/api/v1/state`, issue detail, and refresh.
+- [ ] Add dashboard/API tests for JSON error envelopes, unsupported methods, and refresh coalescing.
+- [ ] Add real integration test profile gated by explicit environment variables.
+- [ ] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
+- [ ] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.
+- [ ] Add release notes and compatibility policy for generated target repos.
