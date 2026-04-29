@@ -1,0 +1,7 @@
+# Example Codex configuration for target repositories.
+
+[sandbox]
+mode = "workspace-write"
+
+[review]
+require_review_packet = true

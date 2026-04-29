@@ -1,0 +1,52 @@
+"""Validate Symphony WORKFLOW.md files."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from .validation import ValidationMessage, missing_file, read_text
+
+
+REQUIRED_TOP_LEVEL_KEYS = ("tracker", "workspace", "agent", "codex")
+
+
+def validate_workflow(root: Path) -> list[ValidationMessage]:
+    missing = missing_file(root, "WORKFLOW.md")
+    if missing:
+        return [missing]
+
+    path = root / "WORKFLOW.md"
+    text = read_text(path)
+    messages: list[ValidationMessage] = []
+    front_matter, body = _split_front_matter(text)
+    if front_matter is None:
+        return [ValidationMessage("ERROR", path, "WORKFLOW.md must start with YAML-style front matter delimited by ---")]
+
+    for key in REQUIRED_TOP_LEVEL_KEYS:
+        if not re.search(rf"^{re.escape(key)}:\s*$", front_matter, flags=re.MULTILINE):
+            messages.append(ValidationMessage("ERROR", path, f"front matter missing required section: {key}"))
+
+    if "{{ issue.identifier }}" not in body:
+        messages.append(ValidationMessage("ERROR", path, "prompt body should include {{ issue.identifier }}"))
+    if "{{ issue.title }}" not in body:
+        messages.append(ValidationMessage("ERROR", path, "prompt body should include {{ issue.title }}"))
+    if "{{ issue.description }}" not in body:
+        messages.append(ValidationMessage("ERROR", path, "prompt body should include {{ issue.description }}"))
+
+    if "active_states:" not in front_matter:
+        messages.append(ValidationMessage("ERROR", path, "tracker config should define active_states"))
+    if "terminal_states:" not in front_matter:
+        messages.append(ValidationMessage("ERROR", path, "tracker config should define terminal_states"))
+    return messages
+
+
+def _split_front_matter(text: str) -> tuple[str | None, str]:
+    if not text.startswith("---\n"):
+        return None, text
+    end = text.find("\n---", 4)
+    if end == -1:
+        return None, text
+    front_matter = text[4:end]
+    body = text[end + 4 :]
+    return front_matter, body

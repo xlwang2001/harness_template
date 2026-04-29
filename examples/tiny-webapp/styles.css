@@ -1,0 +1,19 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #17202a;
+  background: #f7f7f2;
+}
+
+main {
+  max-width: 42rem;
+  margin: 6rem auto;
+  padding: 0 1.5rem;
+}
+
+button {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #17202a;
+  background: #ffffff;
+  color: #17202a;
+}
