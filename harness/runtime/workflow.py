@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import os
 import tempfile
 from pathlib import Path
@@ -37,25 +38,25 @@ class WorkflowReloader:
     def __init__(self, path: Path | None = None, *, cwd: Path | None = None):
         self.path = path
         self.cwd = cwd
-        self.last_mtime_ns: int | None = None
+        self.last_signature: WorkflowFileSignature | None = None
         self.last_good: tuple[WorkflowDefinition, RuntimeConfig] | None = None
         self.last_error: Exception | None = None
 
     def load_initial(self) -> tuple[WorkflowDefinition, RuntimeConfig]:
         workflow, config = self._load()
         self.last_good = (workflow, config)
-        self.last_mtime_ns = workflow.path.stat().st_mtime_ns
+        self.last_signature = WorkflowFileSignature.from_path(workflow.path)
         self.last_error = None
         return workflow, config
 
     def reload_if_changed(self) -> tuple[WorkflowDefinition, RuntimeConfig] | None:
         workflow_path = self._workflow_path()
         try:
-            mtime_ns = workflow_path.stat().st_mtime_ns
+            signature = WorkflowFileSignature.from_path(workflow_path)
         except OSError as exc:
             self.last_error = exc
             return None
-        if self.last_mtime_ns == mtime_ns:
+        if self.last_signature == signature:
             return None
         try:
             workflow, config = self._load()
@@ -63,7 +64,7 @@ class WorkflowReloader:
             self.last_error = exc
             return None
         self.last_good = (workflow, config)
-        self.last_mtime_ns = mtime_ns
+        self.last_signature = signature
         self.last_error = None
         return workflow, config
 
@@ -79,6 +80,21 @@ class WorkflowReloader:
         if not workflow_path.is_absolute():
             workflow_path = (base / workflow_path).resolve()
         return workflow_path
+
+
+class WorkflowFileSignature(tuple):
+    """mtime/size/hash signature used to catch missed timestamp-only changes."""
+
+    __slots__ = ()
+
+    def __new__(cls, mtime_ns: int, size: int, sha256: str):
+        return super().__new__(cls, (mtime_ns, size, sha256))
+
+    @classmethod
+    def from_path(cls, path: Path) -> "WorkflowFileSignature":
+        stat = path.stat()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return cls(stat.st_mtime_ns, stat.st_size, digest)
 
 
 def load_workflow(path: Path | None = None, *, cwd: Path | None = None) -> WorkflowDefinition:

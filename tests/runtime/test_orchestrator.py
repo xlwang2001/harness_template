@@ -167,3 +167,40 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
             orchestrator.process_due_retries()
             self.assertEqual(len(runner.prompts), 1)
+
+    def test_apply_reload_updates_runtime_config_and_prompt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_config = config(root)
+            new_config = RuntimeConfig(
+                workflow_path=root / "WORKFLOW.md",
+                tracker_kind="linear",
+                tracker_endpoint="https://api.linear.app/graphql",
+                tracker_api_key="token",
+                tracker_project_slug="project",
+                active_states=("Ready",),
+                terminal_states=("Done",),
+                polling_interval_ms=1234,
+                workspace_root=root / "new-workspaces",
+                hooks={"after_create": None, "before_run": "echo before", "after_run": None, "before_remove": None},
+                hooks_timeout_ms=2000,
+                max_concurrent_agents=3,
+                max_turns=20,
+                max_retry_backoff_ms=300000,
+                max_concurrent_agents_by_state={"ready": 2},
+                codex_command="true",
+                codex_turn_timeout_ms=1000,
+                codex_read_timeout_ms=1000,
+                codex_stall_timeout_ms=300000,
+                approval_policy="on-request",
+                thread_sandbox="workspace-write",
+                turn_sandbox_policy="workspace-write",
+            )
+            runner = FakeRunner()
+            orchestrator = Orchestrator(old_config, FakeTracker(), WorkspaceManager(old_config), runner, "old", executor=InlineExecutor())
+            orchestrator.apply_reload(new_config, "new {{ issue.identifier }}")
+            self.assertEqual(orchestrator.state.poll_interval_ms, 1234)
+            self.assertEqual(orchestrator.state.max_concurrent_agents, 3)
+            self.assertEqual(orchestrator.workspace_manager.root, (root / "new-workspaces").resolve())
+            self.assertEqual(orchestrator.config.hooks["before_run"], "echo before")
+            self.assertEqual(orchestrator.prompt_template, "new {{ issue.identifier }}")

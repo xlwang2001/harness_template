@@ -5,7 +5,7 @@ from pathlib import Path
 
 from harness.runtime.prompt import TemplateRenderError, render_prompt
 from harness.runtime.models import Issue
-from harness.runtime.workflow import ConfigValidationError, WorkflowReloader, load_workflow, resolve_config, validate_dispatch_config
+from harness.runtime.workflow import ConfigValidationError, WorkflowParseError, WorkflowReloader, load_workflow, parse_simple_yaml, resolve_config, validate_dispatch_config
 
 
 WORKFLOW = """---
@@ -21,6 +21,26 @@ codex:
   command: "true"
 ---
 Issue {{ issue.identifier }} attempt {{ attempt }}
+"""
+
+
+def workflow_text(*, interval=30000, concurrency=2, workspace_root=".workspaces", before_run=None, prompt="Issue {{ issue.identifier }}"):
+    hook = f'\nhooks:\n  before_run: "{before_run}"' if before_run else ""
+    return f"""---
+tracker:
+  kind: linear
+  api_key: $LINEAR_API_KEY
+  project_slug: "$LINEAR_PROJECT_SLUG"
+polling:
+  interval_ms: {interval}
+workspace:
+  root: "{workspace_root}"
+agent:
+  max_concurrent_agents: {concurrency}
+codex:
+  command: "true"{hook}
+---
+{prompt}
 """
 
 
@@ -72,8 +92,28 @@ class WorkflowTests(unittest.TestCase):
             self.assertIsNotNone(reloader.last_error)
             self.assertEqual(reloader.last_good[1].tracker_api_key, config.tracker_api_key)
 
+    def test_reloader_detects_content_change_when_mtime_and_size_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            os.environ["LINEAR_API_KEY"] = "token"
+            os.environ["LINEAR_PROJECT_SLUG"] = "project"
+            path.write_text(workflow_text(prompt="Issue {{ issue.identifier }}"), encoding="utf-8")
+            reloader = WorkflowReloader(path)
+            reloader.load_initial()
+            original_stat = path.stat()
+            path.write_text(workflow_text(prompt="Task! {{ issue.identifier }}"), encoding="utf-8")
+            self.assertEqual(path.stat().st_size, original_stat.st_size)
+            os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            reloaded = reloader.reload_if_changed()
+            self.assertIsNotNone(reloaded)
+            self.assertIn("Task!", reloaded[0].prompt_template)
+
     def test_prompt_rendering_is_strict(self):
         issue = Issue(id="id", identifier="ABC-1", title="Title", state="Todo")
         self.assertEqual(render_prompt("{{ issue.identifier }}", issue), "ABC-1")
         with self.assertRaises(TemplateRenderError):
             render_prompt("{{ issue.missing }}", issue)
+
+    def test_documented_yaml_subset_rejects_unsupported_shapes(self):
+        with self.assertRaises(WorkflowParseError):
+            parse_simple_yaml("- top-level-list")

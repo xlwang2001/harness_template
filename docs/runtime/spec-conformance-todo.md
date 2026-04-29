@@ -30,9 +30,9 @@
 - [x] Add stale-design regression tests for old submodule and Elixir runtime references.
 - [x] Merge the hardened runtime branch into `main`.
 - [x] Add a runtime conformance matrix mapped to upstream SPEC sections.
-- [ ] Replace the minimal YAML subset parser with either a stricter documented subset or an approved YAML dependency.
-- [ ] Add workflow reload tests for changed polling interval, concurrency, workspace root, hooks, and prompt content.
-- [ ] Add filesystem-watch or defensive per-tick reload coverage for missed mtime changes.
+- [x] Replace the minimal YAML subset parser with either a stricter documented subset or an approved YAML dependency.
+- [x] Add workflow reload tests for changed polling interval, concurrency, workspace root, hooks, and prompt content.
+- [x] Add filesystem-watch or defensive per-tick reload coverage for missed mtime changes.
 - [ ] Add structured log records for startup, reload, validation failure, dispatch, retry, reconciliation, hook execution, and session lifecycle.
 - [ ] Add log redaction tests for tracker API tokens and secret environment values.
 - [ ] Add per-state concurrency dispatch tests.
