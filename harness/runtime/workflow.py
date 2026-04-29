@@ -31,6 +31,56 @@ class ConfigValidationError(WorkflowError):
     code = "config_validation_error"
 
 
+class WorkflowReloader:
+    """Track workflow changes while preserving the last known good config."""
+
+    def __init__(self, path: Path | None = None, *, cwd: Path | None = None):
+        self.path = path
+        self.cwd = cwd
+        self.last_mtime_ns: int | None = None
+        self.last_good: tuple[WorkflowDefinition, RuntimeConfig] | None = None
+        self.last_error: Exception | None = None
+
+    def load_initial(self) -> tuple[WorkflowDefinition, RuntimeConfig]:
+        workflow, config = self._load()
+        self.last_good = (workflow, config)
+        self.last_mtime_ns = workflow.path.stat().st_mtime_ns
+        self.last_error = None
+        return workflow, config
+
+    def reload_if_changed(self) -> tuple[WorkflowDefinition, RuntimeConfig] | None:
+        workflow_path = self._workflow_path()
+        try:
+            mtime_ns = workflow_path.stat().st_mtime_ns
+        except OSError as exc:
+            self.last_error = exc
+            return None
+        if self.last_mtime_ns == mtime_ns:
+            return None
+        try:
+            workflow, config = self._load()
+        except Exception as exc:
+            self.last_error = exc
+            return None
+        self.last_good = (workflow, config)
+        self.last_mtime_ns = mtime_ns
+        self.last_error = None
+        return workflow, config
+
+    def _load(self) -> tuple[WorkflowDefinition, RuntimeConfig]:
+        workflow = load_workflow(self.path, cwd=self.cwd)
+        config = resolve_config(workflow)
+        validate_dispatch_config(config)
+        return workflow, config
+
+    def _workflow_path(self) -> Path:
+        base = self.cwd or Path.cwd()
+        workflow_path = (self.path or base / "WORKFLOW.md").expanduser()
+        if not workflow_path.is_absolute():
+            workflow_path = (base / workflow_path).resolve()
+        return workflow_path
+
+
 def load_workflow(path: Path | None = None, *, cwd: Path | None = None) -> WorkflowDefinition:
     base = cwd or Path.cwd()
     workflow_path = (path or base / "WORKFLOW.md").expanduser()

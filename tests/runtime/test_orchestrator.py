@@ -1,5 +1,7 @@
 import tempfile
+import threading
 import unittest
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -73,10 +75,31 @@ class FakeRunner:
         return AgentRunResult(success=True)
 
 
+class BlockingRunner:
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+        self.started.set()
+        self.release.wait(timeout=5)
+        return AgentRunResult(success=True)
+
+
+class InlineExecutor:
+    def submit(self, fn, /, *args, **kwargs):
+        future = Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except Exception as exc:
+            future.set_exception(exc)
+        return future
+
+
 class OrchestratorTests(unittest.TestCase):
     def build(self, root, tracker):
         runner = FakeRunner()
-        orchestrator = Orchestrator(config(root), tracker, WorkspaceManager(config(root)), runner, "Work on {{ issue.identifier }}")
+        orchestrator = Orchestrator(config(root), tracker, WorkspaceManager(config(root)), runner, "Work on {{ issue.identifier }}", executor=InlineExecutor())
         return orchestrator, runner
 
     def test_todo_blocked_by_non_terminal_is_not_eligible(self):
@@ -118,3 +141,29 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.state.running[stale.id] = RunningEntry(issue=stale, started_at=datetime.now(timezone.utc) - timedelta(seconds=5))
             orchestrator.reconcile_stalled()
             self.assertIn(stale.id, orchestrator.state.retry_attempts)
+
+    def test_dispatch_is_non_blocking_and_preserves_running_slot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = config(root)
+            tracker = FakeTracker(candidates=[issue("ABC-4", state="Todo")])
+            runner = BlockingRunner()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=executor)
+                orchestrator.tick_once()
+                self.assertTrue(runner.started.wait(timeout=2))
+                self.assertIn("abc-4", orchestrator.state.running)
+                self.assertEqual(orchestrator.available_slots_for("Todo"), 0)
+                runner.release.set()
+
+    def test_process_due_retries_dispatches_only_due_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = issue("ABC-5", state="Todo")
+            orchestrator, runner = self.build(Path(directory), FakeTracker(candidates=[candidate]))
+            orchestrator.schedule_retry(candidate, attempt=1, error=None)
+            orchestrator.state.retry_attempts[candidate.id].due_at_ms = 10**15
+            orchestrator.process_due_retries()
+            self.assertEqual(len(runner.prompts), 0)
+            orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
+            orchestrator.process_due_retries()
+            self.assertEqual(len(runner.prompts), 1)

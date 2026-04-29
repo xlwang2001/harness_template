@@ -70,7 +70,7 @@ Every agent run should produce evidence: CI status, test commands and results, P
 
 This scaffold should **not** do the following in the first version:
 
-- Reimplement Symphony’s scheduler, Linear polling, Codex app-server runner, or dashboard.
+- Ship a production-complete scheduler, Linear integration, Codex app-server protocol client, or dashboard without further conformance hardening.
 - Become a general-purpose workflow engine.
 - Force one universal security posture across all teams.
 - Replace human review.
@@ -387,7 +387,7 @@ Template philosophy:
 
 ### Phase 4 — Symphony workflow template
 
-Goal: provide a production-like `WORKFLOW.md` template that runs with upstream Symphony.
+Goal: provide a production-like `WORKFLOW.md` template that runs with the hardened runtime.
 
 Minimal skeleton:
 

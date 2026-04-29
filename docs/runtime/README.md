@@ -11,6 +11,10 @@ This runtime follows the upstream [Symphony service specification](https://githu
 - Codex app-server runner abstraction
 - Structured runtime snapshot state
 
+## Current Limitations
+
+The runtime has a hardened orchestration boundary and conformance tests, but the Codex app-server protocol client is still intentionally isolated behind `CodexAgentRunner`. Production use should complete protocol-level integration and real tracker smoke tests before unattended operation.
+
 ## Reference Material
 
 The upstream Symphony repository remains useful for its service specification and `.codex/skills`. Its implementation code is not used as this runtime's execution path.

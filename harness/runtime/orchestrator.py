@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import RLock
+from typing import Protocol
 
 from .agent import AgentRunnerError, CodexAgentRunner
 from .models import Issue, RetryEntry, RunningEntry, RuntimeConfig, RuntimeState
@@ -24,16 +27,31 @@ class Orchestrator:
         workspace_manager: WorkspaceManager,
         agent_runner: CodexAgentRunner,
         prompt_template: str,
+        executor: "Submitter | None" = None,
     ):
         self.config = config
         self.tracker = tracker
         self.workspace_manager = workspace_manager
         self.agent_runner = agent_runner
         self.prompt_template = prompt_template
+        self.executor = executor or ThreadPoolExecutor(max_workers=config.max_concurrent_agents)
+        self._lock = RLock()
         self.state = RuntimeState(
             poll_interval_ms=config.polling_interval_ms,
             max_concurrent_agents=config.max_concurrent_agents,
         )
+
+    def apply_reload(self, config: RuntimeConfig, prompt_template: str) -> None:
+        with self._lock:
+            self.config = config
+            self.prompt_template = prompt_template
+            self.state.poll_interval_ms = config.polling_interval_ms
+            self.state.max_concurrent_agents = config.max_concurrent_agents
+            self.workspace_manager = WorkspaceManager(config)
+            if hasattr(self.tracker, "config"):
+                self.tracker.config = config
+            if hasattr(self.agent_runner, "config"):
+                self.agent_runner.config = config
 
     def eligible(self, issue: Issue) -> bool:
         if not issue.id or not issue.identifier or not issue.title or not issue.state:
@@ -69,6 +87,7 @@ class Orchestrator:
 
     def tick_once(self) -> None:
         self.reconcile_running()
+        self.process_due_retries()
         try:
             candidates = self.tracker.fetch_candidate_issues()
         except TrackerError:
@@ -80,8 +99,15 @@ class Orchestrator:
                 self.dispatch_issue(issue, attempt=None)
 
     def dispatch_issue(self, issue: Issue, attempt: int | None) -> None:
-        self.state.claimed.add(issue.id)
-        self.state.running[issue.id] = RunningEntry(issue=issue, started_at=datetime.now(timezone.utc))
+        with self._lock:
+            if not self.eligible(issue):
+                return
+            self.state.claimed.add(issue.id)
+            self.state.running[issue.id] = RunningEntry(issue=issue, started_at=datetime.now(timezone.utc))
+        future = self.executor.submit(self._run_issue, issue, attempt)
+        future.add_done_callback(lambda done, issue_id=issue.id: self._finish_future(issue_id, done))
+
+    def _run_issue(self, issue: Issue, attempt: int | None) -> None:
         try:
             workspace = self.workspace_manager.create_for_issue(issue.identifier)
             self.state.running[issue.id].workspace_path = workspace.path
@@ -90,19 +116,26 @@ class Orchestrator:
             self.agent_runner.run_turn(issue, prompt, workspace.path, attempt)
             self.workspace_manager.run_hook("after_run", workspace, fatal=False)
         except (AgentRunnerError, Exception) as exc:
-            self.finish_issue(issue.id, normal=False, error=str(exc))
+            raise RuntimeError(str(exc)) from exc
+
+    def _finish_future(self, issue_id: str, future: Future[None]) -> None:
+        try:
+            future.result()
+        except Exception as exc:
+            self.finish_issue(issue_id, normal=False, error=str(exc))
             return
-        self.finish_issue(issue.id, normal=True, error=None)
+        self.finish_issue(issue_id, normal=True, error=None)
 
     def finish_issue(self, issue_id: str, *, normal: bool, error: str | None) -> None:
-        entry = self.state.running.pop(issue_id, None)
-        if not entry:
-            return
-        if normal:
-            self.state.completed.add(issue_id)
-            self.schedule_retry(entry.issue, attempt=1, error=None, continuation=True)
-        else:
-            self.schedule_retry(entry.issue, attempt=1, error=error, continuation=False)
+        with self._lock:
+            entry = self.state.running.pop(issue_id, None)
+            if not entry:
+                return
+            if normal:
+                self.state.completed.add(issue_id)
+                self.schedule_retry(entry.issue, attempt=1, error=None, continuation=True)
+            else:
+                self.schedule_retry(entry.issue, attempt=1, error=error, continuation=False)
 
     def schedule_retry(self, issue: Issue, *, attempt: int, error: str | None, continuation: bool = False) -> None:
         delay = 1000 if continuation else min(10000 * (2 ** max(attempt - 1, 0)), self.config.max_retry_backoff_ms)
@@ -133,6 +166,12 @@ class Orchestrator:
             self.dispatch_issue(issue, attempt=retry.attempt)
         else:
             self.schedule_retry(issue, attempt=retry.attempt + 1, error="no available orchestrator slots")
+
+    def process_due_retries(self) -> None:
+        now = monotonic_ms()
+        due = [issue_id for issue_id, retry in self.state.retry_attempts.items() if retry.due_at_ms <= now]
+        for issue_id in due:
+            self.retry_due(issue_id)
 
     def reconcile_running(self) -> None:
         self.reconcile_stalled()
@@ -194,3 +233,8 @@ class Orchestrator:
             "codex_totals": self.state.codex_totals,
             "rate_limits": self.state.codex_rate_limits,
         }
+
+
+class Submitter(Protocol):
+    def submit(self, fn, /, *args, **kwargs) -> Future:
+        ...

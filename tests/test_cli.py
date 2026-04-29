@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import os
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -65,3 +66,33 @@ class CliTests(unittest.TestCase):
             (tmp_path / "WORKFLOW.md").write_text("not front matter", encoding="utf-8")
             code, _, _ = run_cli(["validate", "--target", str(tmp_path)])
             self.assertEqual(code, 1)
+
+    def test_run_reports_missing_workflow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            code, _, stderr = run_cli(["run", str(Path(directory) / "missing.md")])
+            self.assertEqual(code, 2)
+            self.assertIn("workflow file not found", stderr)
+
+    def test_run_reports_startup_validation_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / "WORKFLOW.md"
+            workflow.write_text(
+                """---
+tracker:
+  kind: linear
+  project_slug: project
+codex:
+  command: "true"
+---
+Work on {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            old_key = os.environ.pop("LINEAR_API_KEY", None)
+            try:
+                code, _, stderr = run_cli(["run", str(workflow)])
+            finally:
+                if old_key is not None:
+                    os.environ["LINEAR_API_KEY"] = old_key
+            self.assertEqual(code, 1)
+            self.assertIn("runtime startup failed", stderr)

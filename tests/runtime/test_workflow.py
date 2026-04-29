@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness.runtime.workflow import ConfigValidationError, load_workflow, resolve_config, validate_dispatch_config
+from harness.runtime.prompt import TemplateRenderError, render_prompt
+from harness.runtime.models import Issue
+from harness.runtime.workflow import ConfigValidationError, WorkflowReloader, load_workflow, resolve_config, validate_dispatch_config
 
 
 WORKFLOW = """---
@@ -54,3 +56,24 @@ class WorkflowTests(unittest.TestCase):
             workflow = load_workflow(cwd=Path(directory))
             self.assertEqual(workflow.prompt_template, "hello")
             self.assertEqual(workflow.config, {})
+
+    def test_reloader_keeps_last_known_good_after_invalid_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(WORKFLOW, encoding="utf-8")
+            os.environ["LINEAR_API_KEY"] = "token"
+            os.environ["LINEAR_PROJECT_SLUG"] = "project"
+            reloader = WorkflowReloader(path)
+            workflow, config = reloader.load_initial()
+            self.assertIn("Issue", workflow.prompt_template)
+            path.write_text("---\ntracker\n---\nbroken", encoding="utf-8")
+            os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000_000))
+            self.assertIsNone(reloader.reload_if_changed())
+            self.assertIsNotNone(reloader.last_error)
+            self.assertEqual(reloader.last_good[1].tracker_api_key, config.tracker_api_key)
+
+    def test_prompt_rendering_is_strict(self):
+        issue = Issue(id="id", identifier="ABC-1", title="Title", state="Todo")
+        self.assertEqual(render_prompt("{{ issue.identifier }}", issue), "ABC-1")
+        with self.assertRaises(TemplateRenderError):
+            render_prompt("{{ issue.missing }}", issue)

@@ -114,8 +114,12 @@ class LinearClient(IssueTrackerClient):
                 if response.status != 200:
                     raise TrackerError("linear_api_status")
                 payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise TrackerError("linear_api_status") from exc
         except urllib.error.URLError as exc:
             raise TrackerError("linear_api_request") from exc
+        except json.JSONDecodeError as exc:
+            raise TrackerError("linear_unknown_payload") from exc
         if payload.get("errors"):
             raise TrackerError("linear_graphql_errors")
         return payload

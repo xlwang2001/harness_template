@@ -38,6 +38,8 @@ Start with `docs/README.md`.
 
 Runtime compatibility is tracked against the upstream [Symphony service specification](https://github.com/openai/symphony/blob/main/SPEC.md). Upstream implementation code is reference material only.
 
+The runtime is in an early conformance stage: orchestration boundaries, validation, retries, and workspace safety are covered by tests, while full Codex app-server protocol integration remains isolated behind the runner abstraction.
+
 ## Status
 
 Early hardened runtime scaffold. Use least-privilege credentials and human review gates first.
