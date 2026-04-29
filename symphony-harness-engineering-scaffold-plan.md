@@ -10,7 +10,7 @@ Bias: prefer Symphony-style issue-centric orchestration over Superteam-style rig
 
 Build a repository that acts as a reusable **harness engineering scaffold** for agent-first project engineering.
 
-This repository should **not** reimplement Symphony. Instead, it should:
+This repository should:
 
 1. **Implement a hardened SPEC-compatible Symphony runtime** in this repository, using upstream `SPEC.md` as the normative reference.
 2. Provide **templates** that make an application repository agent-legible:
