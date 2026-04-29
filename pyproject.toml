@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "harness-engineering-starter"
 version = "0.1.0"
-description = "Reusable scaffold for agent-friendly project engineering with Codex and Symphony."
+description = "Reusable scaffold and hardened SPEC-compatible runtime for agent-friendly project engineering."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

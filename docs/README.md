@@ -8,7 +8,7 @@ It is built around three ideas:
 2. Agents need a legible repository, not a giant prompt.
 3. Humans review outcomes and improve the harness when agents fail.
 
-This repo does not replace Symphony. It reuses Symphony for orchestration and provides the missing project-engineering layer around it: templates, docs, validation, examples, and operating practices.
+This repo implements a hardened runtime compatible with the upstream Symphony service specification and provides the project-engineering layer around it: templates, docs, validation, examples, and operating practices.
 
 ## Start Here
 
@@ -22,4 +22,4 @@ This repo does not replace Symphony. It reuses Symphony for orchestration and pr
 
 ## Mental Model
 
-Symphony runs agents. This scaffold teaches your repository and your team how to work with those agents.
+The hardened runtime runs agents. This scaffold teaches your repository and your team how to work with those agents.

@@ -1,4 +1,4 @@
-.PHONY: validate test symphony-status symphony-update
+.PHONY: validate test runtime-check stale-design-check
 
 validate:
 	python3 -m harness.cli validate --target templates/repo
@@ -6,8 +6,8 @@ validate:
 test:
 	python3 -m unittest discover -s tests
 
-symphony-status:
-	git submodule status vendor/symphony
+runtime-check:
+	python3 -m unittest discover -s tests/runtime
 
-symphony-update:
-	git submodule update --init --recursive vendor/symphony
+stale-design-check:
+	python3 -m unittest tests.test_stale_design

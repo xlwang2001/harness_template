@@ -1,19 +1,12 @@
 # Maintaining This Scaffold
 
-The scaffold maintainers own templates, docs, validators, examples, Symphony pinning, upgrade notes, and release notes. They do not own project-specific business logic copied into target repos.
+The scaffold maintainers own templates, docs, validators, examples, the hardened SPEC-compatible runtime, upgrade notes, and release notes. They do not own project-specific business logic copied into target repos.
 
-## Updating Symphony
+## Updating The Runtime Against The Spec
 
-```bash
-git -C vendor/symphony fetch origin
-git -C vendor/symphony log --oneline HEAD..origin/main
-git -C vendor/symphony checkout <new-commit>
-git add vendor/symphony
-make validate
-make test
-```
+Use the upstream Symphony service specification as the compatibility reference. When the spec changes, update the in-repo runtime, tests, and compatibility notes together.
 
-Update compatibility notes before release.
+The upstream repository's `.codex/skills` may be used as reference guidance, but runtime behavior belongs in this repository.
 
 ## Compatibility Policy
 

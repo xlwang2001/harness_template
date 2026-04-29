@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
 from .agents_validator import validate_agents
 from .docs_validator import validate_docs
 from .project_profiles import PROFILES, get_profile
-from .templates import REPO_ROOT, copy_templates
+from .runtime import RuntimeService, RuntimeServiceError
+from .templates import copy_templates
 from .workflow_validator import validate_workflow
 
 
@@ -29,12 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("--target", required=True, type=Path)
     validate_parser.set_defaults(func=cmd_validate)
 
-    run_parser = subcommands.add_parser("run", help="run Symphony with a workflow file")
-    run_parser.add_argument("--workflow", required=True, type=Path)
+    run_parser = subcommands.add_parser("run", help="run the hardened SPEC-compatible runtime")
+    run_parser.add_argument("workflow", nargs="?", type=Path, help="path to WORKFLOW.md; defaults to ./WORKFLOW.md")
+    run_parser.add_argument("--workflow", dest="workflow_option", type=Path, help=argparse.SUPPRESS)
     run_parser.set_defaults(func=cmd_run)
-
-    sync_parser = subcommands.add_parser("sync-symphony", help="initialize or update the Symphony submodule")
-    sync_parser.set_defaults(func=cmd_sync_symphony)
     return parser
 
 
@@ -71,38 +69,16 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    workflow = args.workflow.resolve()
+    workflow = args.workflow_option or args.workflow or Path("WORKFLOW.md")
+    workflow = workflow.resolve()
     if not workflow.is_file():
         print(f"workflow file not found: {workflow}", file=sys.stderr)
         return 2
-
-    symphony_dir = REPO_ROOT / "vendor" / "symphony"
-    if not symphony_dir.exists() or not any(symphony_dir.iterdir()):
-        print(
-            "Symphony submodule is not initialized. Run: git submodule update --init --recursive vendor/symphony",
-            file=sys.stderr,
-        )
-        return 2
-
-    candidates = [
-        symphony_dir / "elixir",
-        symphony_dir,
-    ]
-    for cwd in candidates:
-        if (cwd / "mix.exs").exists():
-            return subprocess.call(["mix", "run", "--", "--workflow", str(workflow)], cwd=cwd)
-
-    print(
-        f"Could not find a known Symphony entrypoint under {symphony_dir}. "
-        "Open vendor/symphony/SPEC.md for current runtime instructions.",
-        file=sys.stderr,
-    )
-    return 2
-
-
-def cmd_sync_symphony(args: argparse.Namespace) -> int:
-    del args
-    return subprocess.call(["git", "submodule", "update", "--init", "--recursive", "vendor/symphony"], cwd=REPO_ROOT)
+    try:
+        return RuntimeService(workflow).run_forever()
+    except RuntimeServiceError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted
+Superseded by `0004-own-hardened-spec-runtime.md`
 
 ## Decision
 
-This scaffold pins Symphony as a git submodule under `vendor/symphony`.
+This scaffold originally pinned Symphony as a git submodule under `vendor/symphony`.
 
 ## Rationale
 
-The scaffold owns templates, docs, validators, examples, and operating practices. Symphony owns orchestration runtime behavior. A submodule keeps the boundary clear, permits deliberate upgrades, and avoids copying runtime code into this repository.
+This was useful for the initial scaffold baseline, but it left the runtime safety posture outside this repository. The current design owns a hardened SPEC-compatible runtime in Python and treats upstream material as reference input only.

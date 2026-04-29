@@ -4,7 +4,7 @@ This guide explains how to adopt the harness scaffold in an existing project.
 
 ## Prerequisites
 
-You need a Git repository, a working local setup command, at least one automated test command, Codex installed and authenticated, Symphony initialized through this scaffold, a supported issue tracker, and a trusted environment for running coding agents.
+You need a Git repository, a working local setup command, at least one automated test command, Codex installed and authenticated, a supported issue tracker, and a hardened environment for running coding agents.
 
 ## Initialize
 
@@ -35,8 +35,8 @@ Do not commit secrets.
 python -m harness.cli validate --target /path/to/your/repo
 ```
 
-Fix errors before running Symphony.
+Fix errors before running the hardened runtime.
 
 ## First Smoke Test
 
-Create a low-risk issue such as: "Update docs/README.md to add one sentence explaining the local development command." Confirm that Symphony creates a workspace, starts Codex, produces a PR or patch, and leaves a review packet.
+Create a low-risk issue such as: "Update docs/README.md to add one sentence explaining the local development command." Confirm that the runtime creates a workspace, starts Codex, produces a PR or patch, and leaves a review packet.

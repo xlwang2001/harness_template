@@ -1,8 +1,8 @@
 # Harness Engineering Starter
 
-A reusable scaffold for building agent-friendly software projects with Codex and Symphony.
+A reusable scaffold and hardened SPEC-compatible runtime for agent-friendly software projects with Codex.
 
-This repository does not reimplement Symphony. It vendors Symphony as an upstream runtime and adds the project-engineering layer around it:
+This repository implements a hardened Python runtime compatible with the upstream Symphony service specification and adds the project-engineering layer around it:
 
 - target repo templates,
 - `AGENTS.md` and `WORKFLOW.md` conventions,
@@ -10,23 +10,23 @@ This repository does not reimplement Symphony. It vendors Symphony as an upstrea
 - human operating docs,
 - issue-writing and review guides,
 - validation scripts,
+- hardened workspace and orchestration runtime,
 - example projects.
 
 ## Philosophy
 
 Humans steer. Agents execute.
 
-The issue tracker is the control plane. The repository is the knowledge system of record. Symphony runs the agents. This scaffold makes projects ready for that operating model.
+The issue tracker is the control plane. The repository is the knowledge system of record. The in-repo hardened runtime runs agents according to a `WORKFLOW.md` contract.
 
 ## Quick Start
 
 ```bash
-git submodule update --init --recursive
 python -m harness.cli init --target /path/to/your/repo --profile cautious-linear
 python -m harness.cli validate --target /path/to/your/repo
 ```
 
-Then configure `/path/to/your/repo/WORKFLOW.md` and run Symphony:
+Then configure `/path/to/your/repo/WORKFLOW.md` and run the hardened runtime:
 
 ```bash
 python -m harness.cli run --workflow /path/to/your/repo/WORKFLOW.md
@@ -36,6 +36,8 @@ python -m harness.cli run --workflow /path/to/your/repo/WORKFLOW.md
 
 Start with `docs/README.md`.
 
+Runtime compatibility is tracked against the upstream [Symphony service specification](https://github.com/openai/symphony/blob/main/SPEC.md). Upstream implementation code is reference material only.
+
 ## Status
 
-Early scaffold. Use in trusted environments first.
+Early hardened runtime scaffold. Use least-privilege credentials and human review gates first.

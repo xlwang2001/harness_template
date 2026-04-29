@@ -1,7 +1,7 @@
 # Symphony-oriented Harness Engineering Scaffold: Implementation Plan
 
-Date: 2026-04-29  
-Audience: maintainers who want to build a reusable repository for project engineering with Codex/Symphony-style orchestration  
+Date: 2026-04-29
+Audience: maintainers who want to build a reusable repository for project engineering with Codex/Symphony-style orchestration
 Bias: prefer Symphony-style issue-centric orchestration over Superteam-style rigid planning/execution state machines
 
 ---
@@ -12,7 +12,7 @@ Build a repository that acts as a reusable **harness engineering scaffold** for 
 
 This repository should **not** reimplement Symphony. Instead, it should:
 
-1. **Reuse Symphony as the orchestration runtime** by pinning it as a Git submodule or a lightly maintained fork.
+1. **Implement a hardened SPEC-compatible Symphony runtime** in this repository, using upstream `SPEC.md` as the normative reference.
 2. Provide **templates** that make an application repository agent-legible:
    - `AGENTS.md` as a short table of contents, not a giant manual.
    - `WORKFLOW.md` as the Symphony runtime contract.
@@ -32,7 +32,7 @@ This repository should **not** reimplement Symphony. Instead, it should:
    - `harness init`,
    - `harness validate`,
    - `harness run`,
-   - `harness sync-symphony`.
+   - `harness runtime-check`.
 
 The core product is not “another orchestrator”; it is a **repeatable operating system for making project repos usable by autonomous coding agents**.
 
@@ -74,7 +74,7 @@ This scaffold should **not** do the following in the first version:
 - Become a general-purpose workflow engine.
 - Force one universal security posture across all teams.
 - Replace human review.
-- Hide the fact that Symphony is an engineering preview and should be run only in trusted environments unless hardened.
+- Hide the fact that Symphony is an reference implementation and should be hardened before unattended use.
 - Implement Superteam’s rigid planning/execution/review role split as the primary philosophy.
 
 ---
@@ -89,12 +89,10 @@ harness-engineering-starter/
   pyproject.toml
   .gitmodules
 
-  vendor/
-    symphony/                          # git submodule: https://github.com/openai/symphony
 
   harness/
     __init__.py
-    cli.py                             # init / validate / run / sync-symphony
+    cli.py                             # init / validate / run hardened runtime
     templates.py
     workflow_validator.py
     docs_validator.py
@@ -159,7 +157,8 @@ harness-engineering-starter/
     trust-and-safety.md
     maintaining-this-scaffold.md
     decisions/
-      0001-reuse-symphony-as-submodule.md
+      0001-reuse-symphony-as-submodule.md  # historical, superseded by 0004
+      0004-own-hardened-spec-runtime.md
       0002-use-repo-knowledge-as-system-of-record.md
       0003-avoid-rigid-superteam-style-state-machines.md
 
@@ -175,25 +174,24 @@ harness-engineering-starter/
 
 ---
 
-## 4. Reuse strategy for Symphony
+## 4. Hardened runtime strategy
 
-### 4.1 Default: use Symphony as a submodule
+### 4.1 Default: implement the SPEC in this repository
 
 ```bash
-git submodule add https://github.com/openai/symphony vendor/symphony
-git commit -m "Add Symphony upstream as submodule"
+python -m harness.cli run --workflow /path/to/repo/WORKFLOW.md
 ```
 
 Why:
 
-- avoid copying or rewriting upstream orchestration code;
-- pin known-good commits;
-- update deliberately;
-- keep this repo focused on templates, docs, validation, and adoption.
+- own the runtime safety posture directly;
+- track upstream SPEC changes deliberately;
+- update conformance tests deliberately;
+- keep this repo focused on templates, docs, validation, adoption, and hardened orchestration.
 
-### 4.2 When to fork instead
+### 4.2 Upstream reference material
 
-Fork only if you need to patch runtime behavior:
+Use upstream material only as reference input:
 
 - non-Linear tracker support before upstream supports it;
 - hardened sandbox behavior;
@@ -202,7 +200,7 @@ Fork only if you need to patch runtime behavior:
 - custom observability integration;
 - dashboard changes.
 
-If you fork, maintain an `upstream/main` remote, keep patches small, document every patch in `docs/decisions/`, and provide `make sync-upstream`.
+Upstream implementation code is not an execution dependency. Upstream `.codex/skills` may be copied or adapted as agent guidance with attribution.
 
 ### 4.3 What this scaffold owns
 
@@ -214,7 +212,7 @@ If you fork, maintain an `upstream/main` remote, keep patches small, document ev
 - optional Codex skills/hooks;
 - operational playbooks.
 
-### 4.4 What Symphony owns
+### 4.4 What the hardened runtime owns
 
 - issue polling;
 - candidate selection;
@@ -277,24 +275,25 @@ Goal: create the scaffold repo and formalize the reuse strategy.
 Tasks:
 
 1. Create repository.
-2. Add Symphony as `vendor/symphony` submodule.
+2. Implement hardened SPEC-compatible runtime package.
 3. Add ADRs:
-   - `0001-reuse-symphony-as-submodule.md`
+   - `0001-reuse-symphony-as-submodule.md` as a superseded historical decision
+   - `0004-own-hardened-spec-runtime.md`
    - `0002-use-repo-knowledge-as-system-of-record.md`
    - `0003-avoid-rigid-superteam-style-state-machines.md`
 4. Add `Makefile` targets:
-   - `make symphony-status`
-   - `make symphony-update`
+   - `make runtime-check`
+   - `make stale-design-check`
    - `make validate`
    - `make test`
 5. Add root `README.md` explaining purpose and non-goals.
 
 Acceptance criteria:
 
-- `git submodule update --init --recursive` works.
-- README clearly says the repo is a scaffold, not a Symphony implementation.
-- Decision records explain submodule vs fork.
-- No copied Symphony runtime code exists outside `vendor/symphony`.
+- `harness run` starts the in-repo hardened runtime and validates startup config.
+- README clearly says the repo includes a hardened SPEC-compatible runtime and scaffold.
+- Decision records explain why the project owns the hardened runtime.
+- No operational path depends on upstream implementation code.
 
 ### Phase 1 — Minimal scaffold CLI
 
@@ -306,7 +305,7 @@ Commands:
 harness init --target /path/to/repo --profile cautious-linear
 harness validate --target /path/to/repo
 harness run --workflow /path/to/repo/WORKFLOW.md
-harness sync-symphony
+harness runtime-check
 ```
 
 Suggested implementation: use Python standard library first; avoid dependencies until needed.
@@ -539,7 +538,7 @@ Add:
 - dashboard runbook;
 - logs runbook;
 - failure modes guide;
-- upgrade guide for Symphony submodule.
+- upgrade guide for SPEC compatibility.
 
 ---
 
@@ -650,7 +649,7 @@ A target repo is considered “agent-ready” when it has:
 
 The scaffold reaches v1 when:
 
-1. It pins Symphony as a submodule.
+1. It implements a hardened SPEC-compatible runtime.
 2. It has a functioning `harness init`.
 3. It has a functioning `harness validate`.
 4. It provides target repo templates:
@@ -692,7 +691,7 @@ It is built around three ideas:
 2. Agents need a legible repository, not a giant prompt.
 3. Humans review outcomes and improve the harness when agents fail.
 
-This repo does not replace Symphony. It reuses Symphony for orchestration and provides the missing project-engineering layer around it: templates, docs, validation, examples, and operating practices.
+This repo implements a hardened SPEC-compatible runtime and provides the missing project-engineering layer around it: templates, docs, validation, examples, and operating practices.
 
 ## Start here
 
@@ -706,7 +705,7 @@ This repo does not replace Symphony. It reuses Symphony for orchestration and pr
 
 ## Mental model
 
-Symphony runs agents. This scaffold teaches your repository and your team how to work with those agents.
+The hardened runtime runs agents. This scaffold teaches your repository and your team how to work with those agents.
 
 A successful adoption means:
 
@@ -733,7 +732,7 @@ You need:
 - a working local setup command,
 - at least one automated test command,
 - Codex installed and authenticated,
-- Symphony available through this scaffold,
+- the hardened runtime available through this scaffold,
 - a Linear project or another supported issue tracker,
 - a trusted environment for running coding agents.
 
@@ -1062,7 +1061,7 @@ For initial adoption: low concurrency, workspace-write sandbox, no auto-merge, h
 
 ## Incident response
 
-If an agent does something unsafe: stop Symphony, revoke exposed credentials if any, inspect workspace and logs, close or revert PRs, document the failure, and add guardrails before restarting.
+If an agent does something unsafe: stop the runtime, revoke exposed credentials if any, inspect workspace and logs, close or revert PRs, document the failure, and add guardrails before restarting.
 ```
 
 ---
@@ -1072,17 +1071,14 @@ If an agent does something unsafe: stop Symphony, revoke exposed credentials if 
 ```markdown
 # Maintaining This Scaffold
 
-The scaffold maintainers own templates, docs, validators, examples, Symphony pinning, upgrade notes, and release notes. They do not own project-specific business logic copied into target repos.
+The scaffold maintainers own templates, docs, validators, examples, SPEC compatibility, upgrade notes, and release notes. They do not own project-specific business logic copied into target repos.
 
-## Updating Symphony
+## Updating The Runtime Against The Spec
 
 ```bash
-git -C vendor/symphony fetch origin
-git -C vendor/symphony log --oneline HEAD..origin/main
-git -C vendor/symphony checkout <new-commit>
-git add vendor/symphony
 make validate
 make test
+make stale-design-check
 ```
 
 Update compatibility notes and changelog before release.
@@ -1109,7 +1105,7 @@ Bad additions: project-specific feature code, organization secrets, one-off prom
 
 A reusable scaffold for building agent-friendly software projects with Codex and Symphony.
 
-This repository does not reimplement Symphony. It vendors Symphony as an upstream runtime and adds the project-engineering layer around it:
+This repository implements a hardened SPEC-compatible runtime and adds the project-engineering layer around it:
 
 - target repo templates,
 - `AGENTS.md` and `WORKFLOW.md` conventions,
@@ -1123,20 +1119,18 @@ This repository does not reimplement Symphony. It vendors Symphony as an upstrea
 
 Humans steer. Agents execute.
 
-The issue tracker is the control plane. The repository is the knowledge system of record. Symphony runs the agents. This scaffold makes projects ready for that operating model.
+The issue tracker is the control plane. The repository is the knowledge system of record. The hardened runtime runs the agents. This scaffold makes projects ready for that operating model.
 
 ## Quick start
 
 ```bash
 git clone <this-repo>
 cd harness-engineering-starter
-git submodule update --init --recursive
-
 harness init --target /path/to/your/repo --profile cautious-linear
 harness validate --target /path/to/your/repo
 ```
 
-Then configure `/path/to/your/repo/WORKFLOW.md` and run Symphony:
+Then configure `/path/to/your/repo/WORKFLOW.md` and run the hardened runtime:
 
 ```bash
 harness run --workflow /path/to/your/repo/WORKFLOW.md
@@ -1148,7 +1142,7 @@ Start with `docs/README.md`.
 
 ## Status
 
-Early scaffold. Use in trusted environments first.
+Early hardened runtime scaffold. Use least-privilege credentials and human review gates first.
 ```
 
 ---
@@ -1158,7 +1152,7 @@ Early scaffold. Use in trusted environments first.
 ```text
 Build the v1 harness-engineering scaffold described in docs/implementation-plan.md.
 
-Do not reimplement Symphony. Add it as a git submodule under vendor/symphony. Implement a minimal Python CLI with init, validate, run, and sync-symphony commands. Create the templates and human-facing docs described in the plan. Add tests for template copying and validation. Keep AGENTS.md short and make docs/ the system of record.
+Implement the hardened SPEC-compatible runtime in this repository. Do not depend on upstream implementation code. Keep init, validate, and run commands. Create the templates and human-facing docs described in the plan. Add tests for template copying and validation. Keep AGENTS.md short and make docs/ the system of record.
 ```
 
 ---
@@ -1168,7 +1162,7 @@ Do not reimplement Symphony. Add it as a git submodule under vendor/symphony. Im
 - OpenAI Symphony announcement: https://openai.com/index/open-source-codex-orchestration-symphony/
 - Symphony repository: https://github.com/openai/symphony
 - Symphony service specification: https://github.com/openai/symphony/blob/main/SPEC.md
-- Symphony Elixir implementation: https://github.com/openai/symphony/tree/main/elixir
+- Symphony reference skills: https://github.com/openai/symphony/tree/main/.codex/skills
 - Harness engineering article: https://openai.com/index/harness-engineering/
 - Codex skills documentation: https://developers.openai.com/codex/skills
 - Codex AGENTS.md documentation: https://developers.openai.com/codex/guides/agents-md

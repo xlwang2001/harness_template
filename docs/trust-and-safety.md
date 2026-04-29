@@ -1,6 +1,6 @@
 # Trust and Safety
 
-This scaffold is intended for trusted engineering environments unless hardened.
+This scaffold includes hardened runtime defaults, but still requires a deliberately trusted engineering environment.
 
 Agent runs may read and edit repository files, run shell commands inside workspaces, open PRs, comment on issues, inspect CI logs, and use credentials available in the environment.
 
@@ -15,4 +15,4 @@ Agent runs may read and edit repository files, run shell commands inside workspa
 
 ## Incident Response
 
-If an agent does something unsafe: stop Symphony, revoke exposed credentials if any, inspect workspace and logs, close or revert PRs, document the failure, and add guardrails before restarting.
+If an agent does something unsafe: stop the runtime, revoke exposed credentials if any, inspect workspace and logs, close or revert PRs, document the failure, and add guardrails before restarting.
