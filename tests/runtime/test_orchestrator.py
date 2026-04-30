@@ -8,6 +8,7 @@ from pathlib import Path
 from harness.runtime.agent import AgentRunResult
 from harness.runtime.models import BlockerRef, Issue, RuntimeConfig, RunningEntry
 from harness.runtime.orchestrator import Orchestrator
+from harness.runtime.tracker import TrackerError
 from harness.runtime.workspace import WorkspaceManager
 
 
@@ -64,6 +65,11 @@ class FakeTracker:
 
     def fetch_issue_states_by_ids(self, issue_ids):
         return list(self.states)
+
+
+class FailingTerminalTracker(FakeTracker):
+    def fetch_issues_by_states(self, state_names):
+        raise TrackerError("terminal fetch failed")
 
 
 class FakeRunner:
@@ -287,3 +293,43 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(workspace.path.exists())
             self.assertNotIn(paused.id, orchestrator.state.running)
             self.assertNotIn(paused.id, orchestrator.state.claimed)
+
+    def test_startup_terminal_cleanup_runs_before_remove_hook_and_removes_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            done = issue("ABC-9", state="Done")
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {"after_create": None, "before_run": None, "after_run": None, "before_remove": "printf removed > ../removed.txt"},
+                }
+            )
+            orchestrator = Orchestrator(cfg, FakeTracker(terminal=[done]), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            workspace = orchestrator.workspace_manager.create_for_issue(done.identifier)
+            orchestrator.startup_terminal_cleanup()
+            self.assertFalse(workspace.path.exists())
+            self.assertEqual((root / "removed.txt").read_text(encoding="utf-8"), "removed")
+
+    def test_startup_terminal_cleanup_keeps_running_when_terminal_fetch_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            done = issue("ABC-10", state="Done")
+            orchestrator = Orchestrator(config(root), FailingTerminalTracker(), WorkspaceManager(config(root)), FakeRunner(), "Work", executor=InlineExecutor())
+            workspace = orchestrator.workspace_manager.create_for_issue(done.identifier)
+            orchestrator.startup_terminal_cleanup()
+            self.assertTrue(workspace.path.exists())
+
+    def test_startup_terminal_cleanup_removes_workspace_after_nonfatal_hook_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            done = issue("ABC-11", state="Done")
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {"after_create": None, "before_run": None, "after_run": None, "before_remove": "exit 1"},
+                }
+            )
+            orchestrator = Orchestrator(cfg, FakeTracker(terminal=[done]), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            workspace = orchestrator.workspace_manager.create_for_issue(done.identifier)
+            orchestrator.startup_terminal_cleanup()
+            self.assertFalse(workspace.path.exists())

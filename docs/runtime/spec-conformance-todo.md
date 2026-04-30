@@ -40,9 +40,9 @@
 - [x] Add retry backoff cap tests for repeated abnormal exits.
 - [x] Add continuation retry tests that re-fetch active candidates and release claims when issues disappear.
 - [x] Add reconciliation tests for non-active non-terminal states.
-- [ ] Add startup terminal cleanup tests for hook behavior and cleanup failures.
-- [ ] Add hook timeout tests for `after_create`, `before_run`, `after_run`, and `before_remove`.
-- [ ] Add tests for existing non-directory workspace paths.
+- [x] Add startup terminal cleanup tests for hook behavior and cleanup failures.
+- [x] Add hook timeout tests for `after_create`, `before_run`, `after_run`, and `before_remove`.
+- [x] Add tests for existing non-directory workspace paths.
 - [ ] Implement cancellation or termination handling for active workers when tracker state becomes terminal or non-active.
 - [ ] Track worker futures in runtime state so reconciliation can cancel or mark active runs deterministically.
 - [ ] Add runtime shutdown handling for keyboard interrupt and process termination.
