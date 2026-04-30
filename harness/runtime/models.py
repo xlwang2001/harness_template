@@ -137,6 +137,7 @@ class RuntimeState:
     poll_interval_ms: int
     max_concurrent_agents: int
     running: dict[str, RunningEntry] = field(default_factory=dict)
+    worker_futures: dict[str, Any] = field(default_factory=dict)
     claimed: set[str] = field(default_factory=set)
     retry_attempts: dict[str, RetryEntry] = field(default_factory=dict)
     completed: set[str] = field(default_factory=set)

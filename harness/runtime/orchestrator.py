@@ -139,6 +139,9 @@ class Orchestrator:
                 secrets=(self.config.tracker_api_key,),
             )
         future = self.executor.submit(self._run_issue, issue, attempt)
+        with self._lock:
+            if issue.id in self.state.running:
+                self.state.worker_futures[issue.id] = future
         future.add_done_callback(lambda done, issue_id=issue.id: self._finish_future(issue_id, done))
 
     def _run_issue(self, issue: Issue, attempt: int | None) -> None:
@@ -192,7 +195,9 @@ class Orchestrator:
         with self._lock:
             entry = self.state.running.pop(issue_id, None)
             if not entry:
+                self.state.worker_futures.pop(issue_id, None)
                 return
+            self.state.worker_futures.pop(issue_id, None)
             if normal:
                 self.state.completed.add(issue_id)
                 emit_runtime_log(
@@ -292,17 +297,33 @@ class Orchestrator:
             if issue.id not in self.state.running:
                 continue
             if self.config.is_terminal_state(issue.state):
-                self.workspace_manager.cleanup_for_issue(issue.identifier)
-                self.state.running.pop(issue.id, None)
-                self.state.claimed.discard(issue.id)
-                emit_runtime_log(self.logger, "reconciliation_stopped", issue_id=issue.id, issue_identifier=issue.identifier, state=issue.state, cleanup=True, secrets=(self.config.tracker_api_key,))
+                self.stop_running_issue(issue, cleanup=True)
             elif self.config.is_active_state(issue.state):
                 self.state.running[issue.id].issue = issue
             else:
-                self.state.running.pop(issue.id, None)
-                self.state.claimed.discard(issue.id)
-                emit_runtime_log(self.logger, "reconciliation_stopped", issue_id=issue.id, issue_identifier=issue.identifier, state=issue.state, cleanup=False, secrets=(self.config.tracker_api_key,))
+                self.stop_running_issue(issue, cleanup=False)
         emit_runtime_log(self.logger, "reconciliation_completed", running=len(self.state.running), secrets=(self.config.tracker_api_key,))
+
+    def stop_running_issue(self, issue: Issue, *, cleanup: bool) -> None:
+        with self._lock:
+            entry = self.state.running.pop(issue.id, None)
+            future = self.state.worker_futures.pop(issue.id, None)
+            self.state.claimed.discard(issue.id)
+        if not entry:
+            return
+        cancel_requested = future.cancel() if future and not future.done() else False
+        if cleanup:
+            self.workspace_manager.cleanup_for_issue(issue.identifier)
+        emit_runtime_log(
+            self.logger,
+            "reconciliation_stopped",
+            issue_id=issue.id,
+            issue_identifier=issue.identifier,
+            state=issue.state,
+            cleanup=cleanup,
+            cancel_requested=cancel_requested,
+            secrets=(self.config.tracker_api_key,),
+        )
 
     def reconcile_stalled(self) -> None:
         if self.config.codex_stall_timeout_ms <= 0:

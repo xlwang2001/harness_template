@@ -43,8 +43,8 @@
 - [x] Add startup terminal cleanup tests for hook behavior and cleanup failures.
 - [x] Add hook timeout tests for `after_create`, `before_run`, `after_run`, and `before_remove`.
 - [x] Add tests for existing non-directory workspace paths.
-- [ ] Implement cancellation or termination handling for active workers when tracker state becomes terminal or non-active.
-- [ ] Track worker futures in runtime state so reconciliation can cancel or mark active runs deterministically.
+- [x] Implement cancellation or termination handling for active workers when tracker state becomes terminal or non-active.
+- [x] Track worker futures in runtime state so reconciliation can cancel or mark active runs deterministically.
 - [ ] Add runtime shutdown handling for keyboard interrupt and process termination.
 - [ ] Add snapshot tests for running rows, retry rows, aggregate token totals, runtime seconds, and rate limits.
 - [ ] Implement token and rate-limit aggregation from Codex app-server events.

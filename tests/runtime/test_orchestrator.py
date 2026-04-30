@@ -102,6 +102,16 @@ class InlineExecutor:
         return future
 
 
+class QueuedExecutor:
+    def __init__(self):
+        self.futures = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = Future()
+        self.futures.append(future)
+        return future
+
+
 class OrchestratorTests(unittest.TestCase):
     def build(self, root, tracker):
         runner = FakeRunner()
@@ -140,6 +150,23 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.reconcile_running()
             self.assertFalse(workspace.path.exists())
 
+    def test_reconcile_terminal_cancels_pending_future_and_does_not_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            running = issue("ABC-12", state="Todo")
+            done = issue("ABC-12", state="Done")
+            executor = QueuedExecutor()
+            orchestrator = Orchestrator(config(root), FakeTracker(candidates=[running], states=[done]), WorkspaceManager(config(root)), FakeRunner(), "Work", executor=executor)
+            workspace = orchestrator.workspace_manager.create_for_issue(running.identifier)
+            orchestrator.tick_once()
+            orchestrator.reconcile_running()
+            self.assertTrue(executor.futures[0].cancelled())
+            self.assertFalse(workspace.path.exists())
+            self.assertNotIn(running.id, orchestrator.state.running)
+            self.assertNotIn(running.id, orchestrator.state.worker_futures)
+            self.assertNotIn(running.id, orchestrator.state.claimed)
+            self.assertNotIn(running.id, orchestrator.state.retry_attempts)
+
     def test_stall_detection_schedules_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             stale = issue("ABC-3", state="In Progress")
@@ -159,6 +186,7 @@ class OrchestratorTests(unittest.TestCase):
                 orchestrator.tick_once()
                 self.assertTrue(runner.started.wait(timeout=2))
                 self.assertIn("abc-4", orchestrator.state.running)
+                self.assertIn("abc-4", orchestrator.state.worker_futures)
                 self.assertEqual(orchestrator.available_slots_for("Todo"), 0)
                 runner.release.set()
 
@@ -293,6 +321,23 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(workspace.path.exists())
             self.assertNotIn(paused.id, orchestrator.state.running)
             self.assertNotIn(paused.id, orchestrator.state.claimed)
+
+    def test_reconcile_non_active_cancels_pending_future_without_cleanup_or_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            running = issue("ABC-13", state="Todo")
+            paused = issue("ABC-13", state="Human Review")
+            executor = QueuedExecutor()
+            orchestrator = Orchestrator(config(root), FakeTracker(candidates=[running], states=[paused]), WorkspaceManager(config(root)), FakeRunner(), "Work", executor=executor)
+            workspace = orchestrator.workspace_manager.create_for_issue(running.identifier)
+            orchestrator.tick_once()
+            orchestrator.reconcile_running()
+            self.assertTrue(executor.futures[0].cancelled())
+            self.assertTrue(workspace.path.exists())
+            self.assertNotIn(running.id, orchestrator.state.running)
+            self.assertNotIn(running.id, orchestrator.state.worker_futures)
+            self.assertNotIn(running.id, orchestrator.state.claimed)
+            self.assertNotIn(running.id, orchestrator.state.retry_attempts)
 
     def test_startup_terminal_cleanup_runs_before_remove_hook_and_removes_workspace(self):
         with tempfile.TemporaryDirectory() as directory:
