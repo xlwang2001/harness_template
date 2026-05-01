@@ -151,6 +151,7 @@ class Orchestrator:
         future.add_done_callback(lambda done, issue_id=issue.id: self._finish_future(issue_id, done))
 
     def _run_issue(self, issue: Issue, attempt: int | None) -> None:
+        workspace = None
         try:
             workspace = self.workspace_manager.create_for_issue(issue.identifier)
             with self._lock:
@@ -179,7 +180,6 @@ class Orchestrator:
                 attempt=attempt,
                 secrets=(self.config.tracker_api_key,),
             )
-            self.workspace_manager.run_hook("after_run", workspace, fatal=False)
         except (AgentRunnerError, Exception) as exc:
             emit_runtime_log(
                 self.logger,
@@ -192,6 +192,9 @@ class Orchestrator:
                 secrets=(self.config.tracker_api_key,),
             )
             raise RuntimeError(str(exc)) from exc
+        finally:
+            if workspace is not None:
+                self.workspace_manager.run_hook("after_run", workspace, fatal=False)
 
     def _finish_future(self, issue_id: str, future: Future[None]) -> None:
         try:

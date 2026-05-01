@@ -6,7 +6,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from harness.runtime.agent import AgentRunResult
+from harness.runtime.agent import AgentRunnerError, AgentRunResult
 from harness.runtime.models import BlockerRef, Issue, RetryEntry, RuntimeConfig, RunningEntry
 from harness.runtime.orchestrator import Orchestrator
 from harness.runtime.tracker import TrackerError
@@ -86,6 +86,12 @@ class FakeRunner:
     def run_turn(self, issue, prompt, workspace_path, attempt=None):
         self.prompts.append((issue, prompt, workspace_path, attempt))
         return AgentRunResult(success=True)
+
+
+class FailingRunner(FakeRunner):
+    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+        super().run_turn(issue, prompt, workspace_path, attempt)
+        raise AgentRunnerError("agent failed")
 
 
 class BlockingRunner:
@@ -268,6 +274,79 @@ class OrchestratorTests(unittest.TestCase):
             self.assertIn("event=dispatch_preflight_failed", output)
             self.assertIn("tracker.project_slug is required for Linear", output)
             self.assertNotIn(secret, output)
+
+    def test_after_run_hook_runs_after_successful_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {"after_create": None, "before_run": None, "after_run": "printf success > after_run.txt", "before_remove": None},
+                }
+            )
+            candidate = issue("ABC-21")
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual((root / "ABC-21" / "after_run.txt").read_text(encoding="utf-8"), "success")
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_after_run_hook_runs_after_agent_failure_once_workspace_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {"after_create": None, "before_run": None, "after_run": "printf failed > after_run.txt", "before_remove": None},
+                }
+            )
+            candidate = issue("ABC-22")
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), FailingRunner(), "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual((root / "ABC-22" / "after_run.txt").read_text(encoding="utf-8"), "failed")
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+            self.assertEqual(orchestrator.state.retry_attempts[candidate.id].error, "agent failed")
+
+    def test_after_run_hook_runs_after_before_run_failure_once_workspace_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {"after_create": None, "before_run": "exit 1", "after_run": "printf before_failed > after_run.txt", "before_remove": None},
+                }
+            )
+            candidate = issue("ABC-23")
+            runner = FakeRunner()
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual((root / "ABC-23" / "after_run.txt").read_text(encoding="utf-8"), "before_failed")
+            self.assertEqual(runner.prompts, [])
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_after_run_hook_runs_when_attempt_is_canceled_after_workspace_create(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {"after_create": None, "before_run": None, "after_run": "printf canceled > after_run.txt", "before_remove": None},
+                }
+            )
+            candidate = issue("ABC-24")
+            orchestrator = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            orchestrator.state.running[candidate.id] = RunningEntry(issue=candidate, started_at=datetime.now(timezone.utc))
+            orchestrator.state.running.pop(candidate.id)
+
+            orchestrator._run_issue(candidate, attempt=None)
+
+            self.assertEqual((root / "ABC-24" / "after_run.txt").read_text(encoding="utf-8"), "canceled")
+            self.assertNotIn(candidate.id, orchestrator.state.retry_attempts)
 
     def test_apply_reload_updates_runtime_config_and_prompt(self):
         with tempfile.TemporaryDirectory() as directory:
