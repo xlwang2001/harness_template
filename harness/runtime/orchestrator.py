@@ -496,6 +496,82 @@ class Orchestrator:
             "rate_limits": self.state.codex_rate_limits,
         }
 
+    def issue_detail(self, identifier: str) -> dict[str, object] | None:
+        wanted = identifier.lower()
+        for entry in self.state.running.values():
+            if entry.issue.identifier.lower() == wanted:
+                retry = self.state.retry_attempts.get(entry.issue.id)
+                attempt = self.state.last_attempts.get(entry.issue.id)
+                return {
+                    "issue_identifier": entry.issue.identifier,
+                    "issue_id": entry.issue.id,
+                    "status": "running",
+                    "workspace": {"path": str(entry.workspace_path) if entry.workspace_path else None},
+                    "attempts": {"current_retry_attempt": retry.attempt if retry else None},
+                    "running": self._running_detail(entry),
+                    "retry": retry.__dict__ if retry else None,
+                    "last_attempt": self._attempt_detail(attempt),
+                    "tracked": {},
+                }
+        for retry in self.state.retry_attempts.values():
+            if retry.identifier.lower() == wanted:
+                attempt = self.state.last_attempts.get(retry.issue_id)
+                return {
+                    "issue_identifier": retry.identifier,
+                    "issue_id": retry.issue_id,
+                    "status": "retrying",
+                    "workspace": {"path": None},
+                    "attempts": {"current_retry_attempt": retry.attempt},
+                    "running": None,
+                    "retry": retry.__dict__,
+                    "last_attempt": self._attempt_detail(attempt),
+                    "tracked": {},
+                }
+        for attempt in self.state.last_attempts.values():
+            if attempt.identifier.lower() == wanted:
+                return {
+                    "issue_identifier": attempt.identifier,
+                    "issue_id": attempt.issue_id,
+                    "status": attempt.status,
+                    "workspace": {"path": str(attempt.workspace_path) if attempt.workspace_path else None},
+                    "attempts": {"current_retry_attempt": None},
+                    "running": None,
+                    "retry": None,
+                    "last_attempt": self._attempt_detail(attempt),
+                    "tracked": {},
+                }
+        return None
+
+    def _running_detail(self, entry: RunningEntry) -> dict[str, object]:
+        return {
+            "session_id": entry.session_id,
+            "turn_count": entry.turn_count,
+            "state": entry.issue.state,
+            "started_at": entry.started_at.isoformat(),
+            "last_event": entry.last_codex_event,
+            "last_message": entry.last_codex_message,
+            "last_event_at": entry.last_codex_timestamp.isoformat() if entry.last_codex_timestamp else None,
+            "tokens": {
+                "input_tokens": entry.codex_input_tokens,
+                "output_tokens": entry.codex_output_tokens,
+                "total_tokens": entry.codex_total_tokens,
+            },
+        }
+
+    def _attempt_detail(self, attempt: RunAttemptRecord | None) -> dict[str, object] | None:
+        if attempt is None:
+            return None
+        return {
+            "issue_id": attempt.issue_id,
+            "identifier": attempt.identifier,
+            "attempt": attempt.attempt,
+            "workspace_path": str(attempt.workspace_path) if attempt.workspace_path else None,
+            "started_at": attempt.started_at.isoformat(),
+            "finished_at": attempt.finished_at.isoformat(),
+            "status": attempt.status,
+            "error": attempt.error,
+        }
+
 
 class Submitter(Protocol):
     def submit(self, fn, /, *args, **kwargs) -> Future:

@@ -192,6 +192,7 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
     hooks = _map(config.get("hooks"))
     agent = _map(config.get("agent"))
     codex = _map(config.get("codex"))
+    server = _map(config.get("server"))
 
     tracker_kind = str(tracker.get("kind") or "linear")
     if tracker_kind != "linear":
@@ -232,6 +233,9 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
         approval_policy=str(codex.get("approval_policy") or "on-request"),
         thread_sandbox=str(codex.get("thread_sandbox") or "workspace-write"),
         turn_sandbox_policy=str(codex.get("turn_sandbox_policy") or "workspace-write"),
+        server_enabled=_bool(server.get("enabled"), False),
+        server_host=str(server.get("host") or "127.0.0.1"),
+        server_port=_nonnegative_int(server.get("port"), 8765, "server.port"),
     )
 
 
@@ -292,10 +296,30 @@ def _optional_str(value: Any) -> str | None:
     return None if value is None else str(value)
 
 
+def _bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        if value.lower() in {"true", "1", "yes", "on"}:
+            return True
+        if value.lower() in {"false", "0", "no", "off"}:
+            return False
+    return bool(value)
+
+
 def _positive_int(value: Any, default: int, field: str) -> int:
     parsed = _int(value, default, field)
     if parsed <= 0:
         raise ConfigValidationError(f"{field} must be positive")
+    return parsed
+
+
+def _nonnegative_int(value: Any, default: int, field: str) -> int:
+    parsed = _int(value, default, field)
+    if parsed < 0:
+        raise ConfigValidationError(f"{field} must be non-negative")
     return parsed
 
 

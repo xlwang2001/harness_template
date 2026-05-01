@@ -57,7 +57,35 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(config.tracker_project_slug, "project")
             self.assertEqual(config.max_concurrent_agents, 2)
             self.assertTrue(config.workspace_root.is_absolute())
+            self.assertFalse(config.server_enabled)
+            self.assertEqual(config.server_host, "127.0.0.1")
+            self.assertEqual(config.server_port, 8765)
             validate_dispatch_config(config)
+
+    def test_server_config_parses_enabled_host_and_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+codex:
+  command: "true"
+server:
+  enabled: true
+  host: "127.0.0.1"
+  port: 0
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertTrue(config.server_enabled)
+            self.assertEqual(config.server_host, "127.0.0.1")
+            self.assertEqual(config.server_port, 0)
 
     def test_dispatch_validation_requires_env(self):
         with tempfile.TemporaryDirectory() as directory:

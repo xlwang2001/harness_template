@@ -132,3 +132,62 @@ class RuntimeServiceTests(unittest.TestCase):
                 calls[-2:],
                 [(signal.SIGINT, old_handlers[signal.SIGINT]), (signal.SIGTERM, old_handlers[signal.SIGTERM])],
             )
+
+    def test_refresh_request_coalesces_until_consumed(self):
+        service = RuntimeService(None)
+        self.assertFalse(service.request_refresh())
+        self.assertTrue(service.request_refresh())
+        self.assertTrue(service.consume_refresh_requested())
+        self.assertFalse(service.consume_refresh_requested())
+        self.assertFalse(service.request_refresh())
+
+    def test_run_forever_consumes_refresh_and_ticks_immediately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            class RefreshingOrchestrator(FakeOrchestrator):
+                def tick_once(self):
+                    super().tick_once()
+                    if self.ticks == 1:
+                        service.request_refresh()
+                    elif self.ticks == 2:
+                        raise KeyboardInterrupt()
+
+            service = FakeService(None)
+            orchestrator = RefreshingOrchestrator(config(root))
+            service.orchestrator = orchestrator
+            code = self.run_service(service)
+            self.assertEqual(code, 0)
+            self.assertEqual(orchestrator.ticks, 2)
+
+    def test_run_forever_starts_and_stops_enabled_status_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(**{**config(root).__dict__, "server_enabled": True, "server_port": 0})
+            calls = []
+
+            class ServerOrchestrator(FakeOrchestrator):
+                def tick_once(self):
+                    super().tick_once()
+                    raise KeyboardInterrupt()
+
+            class FakeStatusServer:
+                def __init__(self, orchestrator, *, host, port, request_refresh):
+                    calls.append(("init", host, port))
+                    self.server_address = (host, 12345)
+
+                def start(self):
+                    calls.append(("start",))
+
+                def stop(self):
+                    calls.append(("stop",))
+
+            original_server = service_module.RuntimeStatusServer
+            try:
+                service_module.RuntimeStatusServer = FakeStatusServer
+                service = FakeService(ServerOrchestrator(cfg))
+                code = self.run_service(service)
+            finally:
+                service_module.RuntimeStatusServer = original_server
+            self.assertEqual(code, 0)
+            self.assertEqual(calls, [("init", "127.0.0.1", 0), ("start",), ("stop",)])

@@ -19,6 +19,8 @@ User-input-required events fail the current run immediately as `turn_input_requi
 
 When the runtime uses the Linear tracker, it registers the optional `linear_graphql` client-side tool. The tool reuses configured Linear credentials, accepts one GraphQL operation per call, and returns structured success or failure payloads that the agent can inspect without reading raw tokens.
 
+The optional status API is disabled by default. Enable it with `server.enabled: true`; it binds to `server.host` (default `127.0.0.1`) and `server.port` (default `8765`). It serves `/`, `GET /api/v1/state`, `GET /api/v1/<issue_identifier>`, and `POST /api/v1/refresh`. Listener changes require a runtime restart.
+
 ## Workflow Front Matter Subset
 
 The standard-library parser intentionally supports a documented YAML subset: nested maps by indentation, lists with `- ` items, quoted or unquoted scalars, integers, booleans, null values, comments, blank lines, and `|` block scalars. Unsupported YAML features should fail parsing instead of being guessed. This subset covers scaffold `WORKFLOW.md` templates while keeping dependency policy explicit.

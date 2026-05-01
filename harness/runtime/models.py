@@ -93,6 +93,9 @@ class RuntimeConfig:
     approval_policy: str
     thread_sandbox: str
     turn_sandbox_policy: str
+    server_enabled: bool = False
+    server_host: str = "127.0.0.1"
+    server_port: int = 8765
 
     def is_active_state(self, state: str | None) -> bool:
         return (state or "").lower() in {item.lower() for item in self.active_states}

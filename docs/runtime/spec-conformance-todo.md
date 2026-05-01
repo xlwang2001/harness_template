@@ -57,8 +57,8 @@
 - [x] Add approval/tool-call handling policy tests for supported and unsupported dynamic tool calls.
 - [x] Add optional `linear_graphql` client-side tool extension.
 - [x] Add tests for `linear_graphql` valid queries, invalid inputs, multiple operations, missing auth, GraphQL errors, and transport failures.
-- [ ] Add optional HTTP status API for `/api/v1/state`, issue detail, and refresh.
-- [ ] Add dashboard/API tests for JSON error envelopes, unsupported methods, and refresh coalescing.
+- [x] Add optional HTTP status API for `/api/v1/state`, issue detail, and refresh.
+- [x] Add dashboard/API tests for JSON error envelopes, unsupported methods, and refresh coalescing.
 - [ ] Add real integration test profile gated by explicit environment variables.
 - [ ] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 - [ ] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.

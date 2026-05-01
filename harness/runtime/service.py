@@ -13,6 +13,7 @@ from .agent import CodexAgentRunner
 from .client_tools import build_client_tools
 from .orchestrator import Orchestrator
 from .runtime_logging import emit_runtime_log
+from .status_server import RuntimeStatusServer
 from .tracker import LinearClient
 from .workflow import WorkflowReloader
 from .workspace import WorkspaceManager
@@ -29,6 +30,9 @@ class RuntimeService:
         self.reloader = WorkflowReloader(workflow_path)
         self.shutdown_requested = False
         self.shutdown_reason = "shutdown"
+        self._refresh_lock = threading.Lock()
+        self._refresh_requested = False
+        self._refresh_event = threading.Event()
 
     def build_orchestrator(self) -> Orchestrator:
         workflow, config = self.reloader.load_initial()
@@ -41,6 +45,7 @@ class RuntimeService:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s level=%(levelname)s %(message)s")
         previous_handlers = self._install_signal_handlers()
         orchestrator: Orchestrator | None = None
+        status_server: RuntimeStatusServer | None = None
         try:
             try:
                 orchestrator = self.build_orchestrator()
@@ -48,6 +53,21 @@ class RuntimeService:
                 emit_runtime_log(self.logger, "startup_failed", level=logging.ERROR, error=exc)
                 raise RuntimeServiceError(f"runtime startup failed: {exc}") from exc
             orchestrator.startup_terminal_cleanup()
+            if orchestrator.config.server_enabled:
+                status_server = RuntimeStatusServer(
+                    orchestrator,
+                    host=orchestrator.config.server_host,
+                    port=orchestrator.config.server_port,
+                    request_refresh=self.request_refresh,
+                )
+                status_server.start()
+                emit_runtime_log(
+                    self.logger,
+                    "status_server_started",
+                    host=status_server.server_address[0],
+                    port=status_server.server_address[1],
+                    secrets=(orchestrator.config.tracker_api_key,),
+                )
             emit_runtime_log(
                 self.logger,
                 "runtime_started",
@@ -79,10 +99,13 @@ class RuntimeService:
                     )
                 orchestrator.tick_once()
                 if not self.shutdown_requested:
-                    time.sleep(orchestrator.config.polling_interval_ms / 1000)
+                    if self._wait_for_poll_or_refresh(orchestrator.config.polling_interval_ms / 1000):
+                        continue
         except KeyboardInterrupt:
             self._request_shutdown("keyboard_interrupt")
         finally:
+            if status_server is not None:
+                status_server.stop()
             self._restore_signal_handlers(previous_handlers)
         if orchestrator is not None and self.shutdown_requested:
             emit_runtime_log(
@@ -127,3 +150,24 @@ class RuntimeService:
         if not self.shutdown_requested:
             self.shutdown_reason = reason
             self.shutdown_requested = True
+            self._refresh_event.set()
+
+    def request_refresh(self) -> bool:
+        with self._refresh_lock:
+            coalesced = self._refresh_requested
+            self._refresh_requested = True
+            self._refresh_event.set()
+            return coalesced
+
+    def consume_refresh_requested(self) -> bool:
+        with self._refresh_lock:
+            if not self._refresh_requested:
+                return False
+            self._refresh_requested = False
+            self._refresh_event.clear()
+            return True
+
+    def _wait_for_poll_or_refresh(self, timeout: float) -> bool:
+        if self._refresh_event.wait(timeout):
+            return self.consume_refresh_requested()
+        return False
