@@ -66,7 +66,7 @@ class FakeTracker:
 
 
 class FakeRunner:
-    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+    def run_turn(self, issue, prompt, workspace_path, attempt=None, on_event=None):
         return AgentRunResult(success=True)
 
 

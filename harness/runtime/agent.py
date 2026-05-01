@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import queue
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from .models import Issue, RuntimeConfig
 from .workspace import ensure_contained
@@ -23,35 +28,279 @@ class AgentRunResult:
     events: tuple[dict[str, Any], ...] = ()
 
 
-class CodexAgentRunner:
-    """Thin, hardened launch wrapper.
+AgentEventCallback = Callable[[dict[str, Any]], None]
 
-    The full app-server protocol is isolated behind this class. The default
-    implementation validates cwd containment and launches the configured command
-    in the per-issue workspace; protocol-rich integrations can replace this
-    class without changing orchestrator policy.
+
+class CodexAgentRunner:
+    """Hardened stdio JSON-lines app-server client.
+
+    SPEC.md intentionally does not define the exact Codex protocol schema. This
+    client keeps that schema behind a small JSON-RPC-style adapter so the
+    orchestrator owns policy while protocol envelopes can evolve in one place.
     """
 
     def __init__(self, config: RuntimeConfig):
         self.config = config
 
-    def run_turn(self, issue: Issue, prompt: str, workspace_path: Path, attempt: int | None = None) -> AgentRunResult:
-        del issue, prompt, attempt
+    def run_turn(
+        self,
+        issue: Issue,
+        prompt: str,
+        workspace_path: Path,
+        attempt: int | None = None,
+        on_event: AgentEventCallback | None = None,
+    ) -> AgentRunResult:
         workspace_path = workspace_path.resolve()
         ensure_contained(self.config.workspace_root, workspace_path)
+        events: list[dict[str, Any]] = []
+        process: subprocess.Popen[str] | None = None
+
+        def emit(event: Mapping[str, Any]) -> None:
+            normalized = dict(event)
+            normalized.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+            if process is not None:
+                normalized.setdefault("codex_app_server_pid", process.pid)
+            events.append(normalized)
+            if on_event is not None:
+                on_event(normalized)
+
         try:
-            subprocess.run(
+            process = subprocess.Popen(
                 ["bash", "-lc", self.config.codex_command],
                 cwd=workspace_path,
-                timeout=self.config.codex_turn_timeout_ms / 1000,
-                check=True,
                 text=True,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
             )
         except FileNotFoundError as exc:
             raise AgentRunnerError("codex_not_found") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise AgentRunnerError("turn_timeout") from exc
-        except subprocess.CalledProcessError as exc:
-            raise AgentRunnerError(f"turn_failed: {exc.returncode}") from exc
-        return AgentRunResult(success=True)
+
+        client = _JsonLineAppServerClient(
+            process,
+            config=self.config,
+            read_timeout_ms=self.config.codex_read_timeout_ms,
+            turn_timeout_ms=self.config.codex_turn_timeout_ms,
+            emit=emit,
+        )
+        try:
+            client.initialize(workspace_path)
+            thread_id = client.create_thread(issue, workspace_path)
+            turn_id = client.start_turn(issue, prompt, workspace_path, thread_id, attempt)
+            session_id = f"{thread_id}-{turn_id}"
+            emit(
+                {
+                    "event": "session_started",
+                    "session_id": session_id,
+                    "thread_id": thread_id,
+                    "turn_id": turn_id,
+                    "message": f"{issue.identifier}: {issue.title}",
+                }
+            )
+            client.stream_turn(turn_id)
+        finally:
+            client.close()
+        return AgentRunResult(success=True, session_id=session_id, events=tuple(events))
+
+
+class _JsonLineAppServerClient:
+    def __init__(
+        self,
+        process: subprocess.Popen[str],
+        *,
+        config: RuntimeConfig,
+        read_timeout_ms: int,
+        turn_timeout_ms: int,
+        emit: AgentEventCallback,
+    ):
+        self.process = process
+        self.config = config
+        self.read_timeout_ms = read_timeout_ms
+        self.turn_timeout_ms = turn_timeout_ms
+        self.emit = emit
+        self._next_id = 1
+        self._messages: queue.Queue[tuple[str, str]] = queue.Queue()
+        self._stderr: list[str] = []
+        self._start_reader("stdout", process.stdout)
+        self._start_reader("stderr", process.stderr)
+
+    def initialize(self, workspace_path: Path) -> None:
+        self.request(
+            "initialize",
+            {
+                "cwd": str(workspace_path),
+                "approval_policy": self.config.approval_policy,
+                "thread_sandbox": self.config.thread_sandbox,
+                "turn_sandbox_policy": self.config.turn_sandbox_policy,
+            },
+            timeout_ms=self.read_timeout_ms,
+        )
+
+    def create_thread(self, issue: Issue, workspace_path: Path) -> str:
+        result = self.request(
+            "thread/create",
+            {
+                "cwd": str(workspace_path),
+                "title": f"{issue.identifier}: {issue.title}",
+                "metadata": {
+                    "issue_id": issue.id,
+                    "issue_identifier": issue.identifier,
+                    "issue_url": issue.url,
+                },
+            },
+            timeout_ms=self.read_timeout_ms,
+        )
+        return _extract_identifier(result, ("thread_id", "threadId", "id"), nested=("thread", "session"))
+
+    def start_turn(self, issue: Issue, prompt: str, workspace_path: Path, thread_id: str, attempt: int | None) -> str:
+        result = self.request(
+            "turn/start",
+            {
+                "thread_id": thread_id,
+                "cwd": str(workspace_path),
+                "prompt": prompt,
+                "approval_policy": self.config.approval_policy,
+                "sandbox_policy": self.config.turn_sandbox_policy,
+                "title": f"{issue.identifier}: {issue.title}",
+                "metadata": {
+                    "issue_id": issue.id,
+                    "issue_identifier": issue.identifier,
+                    "attempt": attempt,
+                },
+            },
+            timeout_ms=self.read_timeout_ms,
+        )
+        return _extract_identifier(result, ("turn_id", "turnId", "id"), nested=("turn",))
+
+    def stream_turn(self, turn_id: str) -> None:
+        deadline = time.monotonic() + self.turn_timeout_ms / 1000
+        while True:
+            message = self.read_message(deadline=deadline, timeout_error="turn_timeout")
+            event = _event_from_message(message)
+            if event is None:
+                continue
+            event.setdefault("turn_id", turn_id)
+            self.emit(event)
+            name = str(event.get("event") or "")
+            if name == "turn_completed":
+                return
+            if name == "turn_failed":
+                raise AgentRunnerError("turn_failed")
+            if name == "turn_cancelled":
+                raise AgentRunnerError("turn_cancelled")
+            if name == "turn_input_required":
+                raise AgentRunnerError("turn_input_required")
+            if name == "turn_ended_with_error":
+                raise AgentRunnerError("turn_failed")
+            if name == "startup_failed":
+                raise AgentRunnerError("response_error")
+
+    def request(self, method: str, params: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+        request_id = self._next_id
+        self._next_id += 1
+        self.write_message({"jsonrpc": "2.0", "id": request_id, "method": method, "params": dict(params)})
+        deadline = time.monotonic() + timeout_ms / 1000
+        while True:
+            message = self.read_message(deadline=deadline, timeout_error="response_timeout")
+            event = _event_from_message(message)
+            if event is not None:
+                self.emit(event)
+                continue
+            if message.get("id") != request_id:
+                continue
+            if message.get("error"):
+                raise AgentRunnerError("response_error")
+            result = message.get("result")
+            if not isinstance(result, Mapping):
+                raise AgentRunnerError("response_error")
+            return result
+
+    def write_message(self, message: Mapping[str, Any]) -> None:
+        if self.process.stdin is None:
+            raise AgentRunnerError("port_exit")
+        try:
+            self.process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+            self.process.stdin.flush()
+        except BrokenPipeError as exc:
+            raise AgentRunnerError("port_exit") from exc
+
+    def read_message(self, *, deadline: float, timeout_error: str) -> Mapping[str, Any]:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AgentRunnerError(timeout_error)
+            if self.process.poll() is not None and self._messages.empty():
+                raise AgentRunnerError("port_exit")
+            try:
+                source, line = self._messages.get(timeout=remaining)
+            except queue.Empty as exc:
+                if self.process.poll() is not None:
+                    raise AgentRunnerError("port_exit") from exc
+                raise AgentRunnerError(timeout_error) from exc
+            if source == "stderr":
+                self._stderr.append(line)
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                self.emit({"event": "malformed", "message": line})
+                continue
+            if not isinstance(message, Mapping):
+                self.emit({"event": "malformed", "message": line})
+                continue
+            return message
+
+    def close(self) -> None:
+        if self.process.poll() is None:
+            try:
+                self.write_message({"jsonrpc": "2.0", "method": "shutdown", "params": {}})
+            except AgentRunnerError:
+                pass
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=1)
+        for pipe in (self.process.stdin, self.process.stdout, self.process.stderr):
+            if pipe is not None and not pipe.closed:
+                pipe.close()
+
+    def _start_reader(self, source: str, pipe) -> None:
+        if pipe is None:
+            return
+
+        def read_lines() -> None:
+            for line in pipe:
+                self._messages.put((source, line.rstrip("\n")))
+
+        thread = threading.Thread(target=read_lines, daemon=True)
+        thread.start()
+
+
+def _event_from_message(message: Mapping[str, Any]) -> dict[str, Any] | None:
+    if "event" in message:
+        return dict(message)
+    method = message.get("method")
+    params = message.get("params")
+    if method in {"event", "notification"} and isinstance(params, Mapping):
+        event = dict(params)
+        event.setdefault("event", method)
+        return event
+    return None
+
+
+def _extract_identifier(result: Mapping[str, Any], keys: tuple[str, ...], *, nested: tuple[str, ...]) -> str:
+    for key in keys:
+        value = result.get(key)
+        if value:
+            return str(value)
+    for nested_key in nested:
+        value = result.get(nested_key)
+        if isinstance(value, Mapping):
+            for key in keys:
+                identifier = value.get(key)
+                if identifier:
+                    return str(identifier)
+    raise AgentRunnerError("response_error")

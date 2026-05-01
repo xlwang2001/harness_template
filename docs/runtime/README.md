@@ -8,12 +8,14 @@ This runtime follows the upstream [Symphony service specification](https://githu
 - Linear-compatible issue tracker adapter
 - Workspace manager with path containment checks
 - Orchestrator with polling, reconciliation, retries, and bounded concurrency
-- Codex app-server runner abstraction
+- Codex app-server runner with a stdio JSON-lines protocol adapter
 - Structured runtime snapshot state
 
 ## Current Limitations
 
-The runtime has a hardened orchestration boundary and conformance tests, but the Codex app-server protocol client is still intentionally isolated behind `CodexAgentRunner`. Production use should complete protocol-level integration and real tracker smoke tests before unattended operation.
+The runtime has a hardened orchestration boundary and conformance tests, and `CodexAgentRunner` now owns app-server launch, session/thread/turn startup, event streaming, timeout handling, and terminal error mapping. `SPEC.md` intentionally defers exact protocol envelopes to the targeted Codex app-server version, so production use should verify the adapter against the generated schema for the installed Codex version and run real tracker smoke tests before unattended operation.
+
+User-input-required events fail the current run immediately as `turn_input_required`; the orchestrator then applies the normal retry policy. This keeps runs from waiting indefinitely for operator input.
 
 ## Workflow Front Matter Subset
 

@@ -170,9 +170,17 @@ class Orchestrator:
                 attempt=attempt,
                 secrets=(self.config.tracker_api_key,),
             )
-            result = self.agent_runner.run_turn(issue, prompt, workspace.path, attempt)
-            for event in result.events:
+            emitted_via_callback = False
+
+            def on_event(event: dict[str, object]) -> None:
+                nonlocal emitted_via_callback
+                emitted_via_callback = True
                 self.record_agent_event(issue.id, event)
+
+            result = self.agent_runner.run_turn(issue, prompt, workspace.path, attempt, on_event=on_event)
+            if not emitted_via_callback:
+                for event in result.events:
+                    self.record_agent_event(issue.id, event)
             emit_runtime_log(
                 self.logger,
                 "agent_session_completed",

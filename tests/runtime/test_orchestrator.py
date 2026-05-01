@@ -83,20 +83,20 @@ class FakeRunner:
     def __init__(self):
         self.prompts = []
 
-    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+    def run_turn(self, issue, prompt, workspace_path, attempt=None, on_event=None):
         self.prompts.append((issue, prompt, workspace_path, attempt))
         return AgentRunResult(success=True)
 
 
 class FailingRunner(FakeRunner):
-    def run_turn(self, issue, prompt, workspace_path, attempt=None):
-        super().run_turn(issue, prompt, workspace_path, attempt)
+    def run_turn(self, issue, prompt, workspace_path, attempt=None, on_event=None):
+        super().run_turn(issue, prompt, workspace_path, attempt, on_event=on_event)
         raise AgentRunnerError("agent failed")
 
 
 class TimeoutRunner(FakeRunner):
-    def run_turn(self, issue, prompt, workspace_path, attempt=None):
-        super().run_turn(issue, prompt, workspace_path, attempt)
+    def run_turn(self, issue, prompt, workspace_path, attempt=None, on_event=None):
+        super().run_turn(issue, prompt, workspace_path, attempt, on_event=on_event)
         raise AgentRunnerError("turn_timeout")
 
 
@@ -105,8 +105,11 @@ class EventRunner(FakeRunner):
         super().__init__()
         self.events = events
 
-    def run_turn(self, issue, prompt, workspace_path, attempt=None):
-        super().run_turn(issue, prompt, workspace_path, attempt)
+    def run_turn(self, issue, prompt, workspace_path, attempt=None, on_event=None):
+        super().run_turn(issue, prompt, workspace_path, attempt, on_event=on_event)
+        if on_event is not None:
+            for event in self.events:
+                on_event(event)
         return AgentRunResult(success=True, events=tuple(self.events))
 
 
@@ -115,7 +118,7 @@ class BlockingRunner:
         self.started = threading.Event()
         self.release = threading.Event()
 
-    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+    def run_turn(self, issue, prompt, workspace_path, attempt=None, on_event=None):
         self.started.set()
         self.release.wait(timeout=5)
         return AgentRunResult(success=True)

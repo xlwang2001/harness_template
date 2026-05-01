@@ -51,9 +51,9 @@
 - [x] Align `after_run` hook execution with SPEC so it runs after success, failure, timeout, or cancellation once a workspace exists.
 - [x] Add run-attempt lifecycle reason tests for succeeded, failed, timed out, stalled, and canceled-by-reconciliation outcomes.
 - [x] Implement token and rate-limit aggregation from Codex app-server events.
-- [ ] Implement a real Codex app-server protocol client behind `CodexAgentRunner`.
-- [ ] Add Codex protocol tests for startup handshake, thread creation, turn streaming, completion, failure, cancellation, timeout, and subprocess exit.
-- [ ] Add user-input-required handling policy and tests so runs never stall indefinitely.
+- [x] Implement a real Codex app-server protocol client behind `CodexAgentRunner`.
+- [x] Add Codex protocol tests for startup handshake, thread creation, turn streaming, completion, failure, cancellation, timeout, and subprocess exit.
+- [x] Add user-input-required handling policy and tests so runs never stall indefinitely.
 - [ ] Add approval/tool-call handling policy tests for supported and unsupported dynamic tool calls.
 - [ ] Add optional `linear_graphql` client-side tool extension.
 - [ ] Add tests for `linear_graphql` valid queries, invalid inputs, multiple operations, missing auth, GraphQL errors, and transport failures.
