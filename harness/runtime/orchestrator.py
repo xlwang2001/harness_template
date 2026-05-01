@@ -147,7 +147,11 @@ class Orchestrator:
     def _run_issue(self, issue: Issue, attempt: int | None) -> None:
         try:
             workspace = self.workspace_manager.create_for_issue(issue.identifier)
-            self.state.running[issue.id].workspace_path = workspace.path
+            with self._lock:
+                entry = self.state.running.get(issue.id)
+                if entry is None:
+                    return
+                entry.workspace_path = workspace.path
             self.workspace_manager.run_hook("before_run", workspace, fatal=True)
             prompt = render_prompt(self.prompt_template, issue, attempt)
             emit_runtime_log(
@@ -322,6 +326,34 @@ class Orchestrator:
             state=issue.state,
             cleanup=cleanup,
             cancel_requested=cancel_requested,
+            secrets=(self.config.tracker_api_key,),
+        )
+
+    def shutdown(self, reason: str) -> None:
+        with self._lock:
+            futures = list(self.state.worker_futures.values())
+            running_count = len(self.state.running)
+            self.state.running.clear()
+            self.state.worker_futures.clear()
+            self.state.claimed.clear()
+        cancelled = 0
+        for future in futures:
+            if future.done():
+                continue
+            if future.cancel():
+                cancelled += 1
+        executor_shutdown = getattr(self.executor, "shutdown", None)
+        if callable(executor_shutdown):
+            try:
+                executor_shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                executor_shutdown(wait=False)
+        emit_runtime_log(
+            self.logger,
+            "orchestrator_shutdown_completed",
+            reason=reason,
+            running=running_count,
+            cancelled=cancelled,
             secrets=(self.config.tracker_api_key,),
         )
 

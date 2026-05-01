@@ -112,6 +112,15 @@ class QueuedExecutor:
         return future
 
 
+class ShutdownExecutor(QueuedExecutor):
+    def __init__(self):
+        super().__init__()
+        self.shutdown_calls = []
+
+    def shutdown(self, **kwargs):
+        self.shutdown_calls.append(kwargs)
+
+
 class OrchestratorTests(unittest.TestCase):
     def build(self, root, tracker):
         runner = FakeRunner()
@@ -378,3 +387,37 @@ class OrchestratorTests(unittest.TestCase):
             workspace = orchestrator.workspace_manager.create_for_issue(done.identifier)
             orchestrator.startup_terminal_cleanup()
             self.assertFalse(workspace.path.exists())
+
+    def test_shutdown_cancels_pending_futures_clears_state_and_preserves_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-14", state="Todo")
+            executor = ShutdownExecutor()
+            orchestrator = Orchestrator(config(root), FakeTracker(candidates=[candidate]), WorkspaceManager(config(root)), FakeRunner(), "Work", executor=executor)
+            workspace = orchestrator.workspace_manager.create_for_issue(candidate.identifier)
+            orchestrator.tick_once()
+            orchestrator.shutdown("operator")
+            self.assertTrue(executor.futures[0].cancelled())
+            self.assertEqual(executor.shutdown_calls, [{"wait": False, "cancel_futures": True}])
+            self.assertTrue(workspace.path.exists())
+            self.assertEqual(orchestrator.state.running, {})
+            self.assertEqual(orchestrator.state.worker_futures, {})
+            self.assertEqual(orchestrator.state.claimed, set())
+            self.assertEqual(orchestrator.state.retry_attempts, {})
+
+    def test_late_future_completion_after_shutdown_does_not_schedule_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-15", state="Todo")
+            executor = QueuedExecutor()
+            orchestrator = Orchestrator(config(root), FakeTracker(candidates=[candidate]), WorkspaceManager(config(root)), FakeRunner(), "Work", executor=executor)
+            workspace = orchestrator.workspace_manager.create_for_issue(candidate.identifier)
+            orchestrator.tick_once()
+            self.assertTrue(executor.futures[0].set_running_or_notify_cancel())
+            orchestrator.shutdown("operator")
+            executor.futures[0].set_result(None)
+            self.assertTrue(workspace.path.exists())
+            self.assertEqual(orchestrator.state.running, {})
+            self.assertEqual(orchestrator.state.worker_futures, {})
+            self.assertEqual(orchestrator.state.claimed, set())
+            self.assertNotIn(candidate.id, orchestrator.state.retry_attempts)
