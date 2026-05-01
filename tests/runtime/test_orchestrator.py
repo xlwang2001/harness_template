@@ -100,6 +100,16 @@ class TimeoutRunner(FakeRunner):
         raise AgentRunnerError("turn_timeout")
 
 
+class EventRunner(FakeRunner):
+    def __init__(self, events):
+        super().__init__()
+        self.events = events
+
+    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+        super().run_turn(issue, prompt, workspace_path, attempt)
+        return AgentRunResult(success=True, events=tuple(self.events))
+
+
 class BlockingRunner:
     def __init__(self):
         self.started = threading.Event()
@@ -716,3 +726,108 @@ class OrchestratorTests(unittest.TestCase):
                 {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0.0},
             )
             self.assertIsNone(snapshot["rate_limits"])
+
+    def test_agent_event_updates_live_session_tokens_and_rate_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orchestrator, _ = self.build(root, FakeTracker())
+            running = issue("ABC-28", state="In Progress")
+            started_at = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+            orchestrator.state.running[running.id] = RunningEntry(issue=running, started_at=started_at)
+
+            orchestrator.record_agent_event(
+                running.id,
+                {
+                    "event": "thread/tokenUsage/updated",
+                    "timestamp": "2026-01-01T12:01:00Z",
+                    "session_id": "thread-1-turn-1",
+                    "thread_id": "thread-1",
+                    "turn_id": "turn-1",
+                    "codex_app_server_pid": 12345,
+                    "message": "tokens updated",
+                    "usage": {"inputTokens": "10", "outputTokens": 5, "totalTokens": 15},
+                    "rate_limits": {"primary": {"remaining": 12}},
+                },
+            )
+
+            entry = orchestrator.state.running[running.id]
+            self.assertEqual(entry.session_id, "thread-1-turn-1")
+            self.assertEqual(entry.thread_id, "thread-1")
+            self.assertEqual(entry.turn_id, "turn-1")
+            self.assertEqual(entry.codex_app_server_pid, "12345")
+            self.assertEqual(entry.last_codex_event, "thread/tokenUsage/updated")
+            self.assertEqual(entry.last_codex_timestamp, datetime(2026, 1, 1, 12, 1, tzinfo=timezone.utc))
+            self.assertEqual(entry.last_codex_message, "tokens updated")
+            self.assertEqual(entry.codex_input_tokens, 10)
+            self.assertEqual(entry.codex_output_tokens, 5)
+            self.assertEqual(entry.codex_total_tokens, 15)
+            self.assertEqual(entry.last_reported_input_tokens, 10)
+            self.assertEqual(entry.last_reported_output_tokens, 5)
+            self.assertEqual(entry.last_reported_total_tokens, 15)
+            self.assertEqual(orchestrator.state.codex_totals["input_tokens"], 10)
+            self.assertEqual(orchestrator.state.codex_totals["output_tokens"], 5)
+            self.assertEqual(orchestrator.state.codex_totals["total_tokens"], 15)
+            self.assertEqual(orchestrator.state.codex_rate_limits, {"primary": {"remaining": 12}})
+
+    def test_agent_event_uses_absolute_token_deltas_and_ignores_delta_usage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orchestrator, _ = self.build(root, FakeTracker())
+            running = issue("ABC-29", state="In Progress")
+            orchestrator.state.running[running.id] = RunningEntry(issue=running, started_at=datetime.now(timezone.utc))
+
+            orchestrator.record_agent_event(
+                running.id,
+                {"event": "thread/tokenUsage/updated", "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}},
+            )
+            orchestrator.record_agent_event(
+                running.id,
+                {"event": "thread/tokenUsage/updated", "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}},
+            )
+            orchestrator.record_agent_event(
+                running.id,
+                {"event": "token_count", "payload": {"total_token_usage": {"input_tokens": 14, "output_tokens": 7, "total_tokens": 21}}},
+            )
+            orchestrator.record_agent_event(
+                running.id,
+                {"event": "notification", "usage": {"input_tokens": 999, "output_tokens": 999, "total_tokens": 1998}, "last_token_usage": {"total_tokens": 2000}},
+            )
+
+            entry = orchestrator.state.running[running.id]
+            self.assertEqual(entry.codex_input_tokens, 14)
+            self.assertEqual(entry.codex_output_tokens, 7)
+            self.assertEqual(entry.codex_total_tokens, 21)
+            self.assertEqual(orchestrator.state.codex_totals["input_tokens"], 14)
+            self.assertEqual(orchestrator.state.codex_totals["output_tokens"], 7)
+            self.assertEqual(orchestrator.state.codex_totals["total_tokens"], 21)
+
+    def test_run_turn_result_events_are_aggregated_before_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-30", state="Todo")
+            cfg = config(root)
+            runner = EventRunner(
+                [
+                    {
+                        "event": "thread/tokenUsage/updated",
+                        "payload": {"usage": {"input_tokens": 3, "output_tokens": 4}},
+                    },
+                    {
+                        "event": "turn_completed",
+                        "payload": {
+                            "total_token_usage": {"inputTokens": 8, "outputTokens": 6, "totalTokens": 14},
+                            "rateLimits": {"secondary": {"remaining": 3}},
+                        },
+                    },
+                ]
+            )
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual(orchestrator.state.codex_totals["input_tokens"], 8)
+            self.assertEqual(orchestrator.state.codex_totals["output_tokens"], 6)
+            self.assertEqual(orchestrator.state.codex_totals["total_tokens"], 14)
+            self.assertEqual(orchestrator.state.codex_rate_limits, {"secondary": {"remaining": 3}})
+            self.assertIn(candidate.id, orchestrator.state.last_attempts)
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].status, "succeeded")

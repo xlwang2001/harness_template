@@ -7,7 +7,7 @@ import logging
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import RLock
-from typing import Protocol
+from typing import Any, Mapping, Protocol
 
 from .agent import AgentRunnerError, CodexAgentRunner
 from .models import Issue, RetryEntry, RunAttemptRecord, RunningEntry, RuntimeConfig, RuntimeState
@@ -170,7 +170,9 @@ class Orchestrator:
                 attempt=attempt,
                 secrets=(self.config.tracker_api_key,),
             )
-            self.agent_runner.run_turn(issue, prompt, workspace.path, attempt)
+            result = self.agent_runner.run_turn(issue, prompt, workspace.path, attempt)
+            for event in result.events:
+                self.record_agent_event(issue.id, event)
             emit_runtime_log(
                 self.logger,
                 "agent_session_completed",
@@ -234,6 +236,46 @@ class Orchestrator:
                     secrets=(self.config.tracker_api_key,),
                 )
                 self.schedule_retry(entry.issue, attempt=1, error=error, continuation=False)
+
+    def record_agent_event(self, issue_id: str, event: Mapping[str, Any]) -> None:
+        with self._lock:
+            entry = self.state.running.get(issue_id)
+            if entry is None:
+                return
+            event_name = _event_name(event)
+            if event_name:
+                entry.last_codex_event = event_name
+                if event_name == "turn_completed":
+                    entry.turn_count += 1
+            entry.last_codex_timestamp = _event_timestamp(event)
+            entry.last_codex_message = _event_message(event)
+            entry.session_id = _string_or_none(event.get("session_id") or event.get("sessionId")) or entry.session_id
+            entry.thread_id = _string_or_none(event.get("thread_id") or event.get("threadId")) or entry.thread_id
+            entry.turn_id = _string_or_none(event.get("turn_id") or event.get("turnId")) or entry.turn_id
+            entry.codex_app_server_pid = _string_or_none(event.get("codex_app_server_pid") or event.get("codexAppServerPid")) or entry.codex_app_server_pid
+            usage = _absolute_token_usage(event)
+            if usage:
+                self._apply_token_usage_locked(entry, usage)
+            rate_limits = _rate_limits(event)
+            if rate_limits is not None:
+                self.state.codex_rate_limits = rate_limits
+
+    def _apply_token_usage_locked(self, entry: RunningEntry, usage: dict[str, int]) -> None:
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        total_tokens = usage.get("total_tokens")
+        if input_tokens is not None:
+            self.state.codex_totals["input_tokens"] += max(input_tokens - entry.last_reported_input_tokens, 0)
+            entry.last_reported_input_tokens = input_tokens
+            entry.codex_input_tokens = input_tokens
+        if output_tokens is not None:
+            self.state.codex_totals["output_tokens"] += max(output_tokens - entry.last_reported_output_tokens, 0)
+            entry.last_reported_output_tokens = output_tokens
+            entry.codex_output_tokens = output_tokens
+        if total_tokens is not None:
+            self.state.codex_totals["total_tokens"] += max(total_tokens - entry.last_reported_total_tokens, 0)
+            entry.last_reported_total_tokens = total_tokens
+            entry.codex_total_tokens = total_tokens
 
     def _record_attempt_locked(self, entry: RunningEntry, *, status: str, error: str | None) -> None:
         self.state.last_attempts[entry.issue.id] = RunAttemptRecord(
@@ -450,3 +492,105 @@ class Orchestrator:
 class Submitter(Protocol):
     def submit(self, fn, /, *args, **kwargs) -> Future:
         ...
+
+
+def _event_name(event: Mapping[str, Any]) -> str | None:
+    return _string_or_none(event.get("event") or event.get("type"))
+
+
+def _event_timestamp(event: Mapping[str, Any]) -> datetime:
+    raw = event.get("timestamp") or event.get("time") or event.get("created_at")
+    if isinstance(raw, datetime):
+        return raw
+    if raw:
+        try:
+            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
+def _event_message(event: Mapping[str, Any]) -> str | None:
+    value = event.get("message") or event.get("summary") or event.get("text")
+    if value is None and isinstance(event.get("payload"), str):
+        value = event["payload"]
+    if value is None:
+        return None
+    text = str(value)
+    return text if len(text) <= 500 else f"{text[:497]}..."
+
+
+def _absolute_token_usage(event: Mapping[str, Any]) -> dict[str, int] | None:
+    event_name = _event_name(event)
+    payload = event.get("payload")
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    candidates: list[Any] = []
+    if event_name == "thread/tokenUsage/updated":
+        candidates.extend([event.get("usage"), payload_map.get("usage"), payload, event])
+    candidates.extend(
+        [
+            event.get("total_token_usage"),
+            event.get("totalTokenUsage"),
+            payload_map.get("total_token_usage"),
+            payload_map.get("totalTokenUsage"),
+        ]
+    )
+    for candidate in candidates:
+        if isinstance(candidate, Mapping):
+            usage = _normalize_token_usage(candidate)
+            if usage:
+                return usage
+    return None
+
+
+def _normalize_token_usage(value: Mapping[str, Any]) -> dict[str, int] | None:
+    input_tokens = _first_int(value, ("input_tokens", "inputTokens", "prompt_tokens", "promptTokens"))
+    output_tokens = _first_int(value, ("output_tokens", "outputTokens", "completion_tokens", "completionTokens"))
+    total_tokens = _first_int(value, ("total_tokens", "totalTokens", "total"))
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    usage = {
+        key: token
+        for key, token in (
+            ("input_tokens", input_tokens),
+            ("output_tokens", output_tokens),
+            ("total_tokens", total_tokens),
+        )
+        if token is not None
+    }
+    return usage or None
+
+
+def _rate_limits(event: Mapping[str, Any]) -> Any:
+    payload = event.get("payload")
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    for key in ("rate_limits", "rateLimits", "rate_limit", "rateLimit"):
+        if key in event:
+            return event[key]
+        if key in payload_map:
+            return payload_map[key]
+    return None
+
+
+def _first_int(value: Mapping[str, Any], keys: tuple[str, ...]) -> int | None:
+    for key in keys:
+        token = _coerce_int(value.get(key))
+        if token is not None:
+            return token
+    return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        token = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(token, 0)
+
+
+def _string_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)

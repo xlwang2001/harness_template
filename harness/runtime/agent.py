@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .models import Issue, RuntimeConfig
 from .workspace import ensure_contained
@@ -19,6 +20,7 @@ class AgentRunResult:
     success: bool
     session_id: str | None = None
     error: str | None = None
+    events: tuple[dict[str, Any], ...] = ()
 
 
 class CodexAgentRunner:
