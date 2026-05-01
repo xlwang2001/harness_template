@@ -53,6 +53,7 @@ import time
 mode = os.environ.get("FAKE_CODEX_MODE", "success")
 record_path = os.environ.get("FAKE_CODEX_RECORD")
 records = []
+turn_count = 0
 
 
 def send(message):
@@ -82,7 +83,9 @@ for line in sys.stdin:
     elif method == "thread/create":
         send({"jsonrpc": "2.0", "id": request_id, "result": {"thread": {"id": "thread-1"}}})
     elif method == "turn/start":
-        send({"jsonrpc": "2.0", "id": request_id, "result": {"turn_id": "turn-1"}})
+        turn_count += 1
+        turn_id = f"turn-{turn_count}"
+        send({"jsonrpc": "2.0", "id": request_id, "result": {"turn_id": turn_id}})
         if mode == "success":
             send({"event": "notification", "message": "working"})
             send({
@@ -90,6 +93,9 @@ for line in sys.stdin:
                 "usage": {"input_tokens": 5, "output_tokens": 6, "total_tokens": 11},
                 "rate_limits": {"primary": {"remaining": 10}},
             })
+            send({"event": "turn_completed"})
+        elif mode == "multi_turn":
+            send({"event": "notification", "message": f"working {turn_count}"})
             send({"event": "turn_completed"})
         elif mode == "failure":
             send({"event": "turn_failed", "message": "bad turn"})
@@ -162,6 +168,35 @@ class CodexAgentRunnerTests(unittest.TestCase):
             self.assertEqual(records[2]["params"]["prompt"], "Do the work")
             self.assertEqual(records[2]["params"]["thread_id"], "thread-1")
             self.assertEqual(records[2]["params"]["metadata"]["issue_identifier"], "ABC-1")
+
+    def test_protocol_continuation_turns_reuse_thread_and_send_continuation_prompt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner, workspace, record = self.build_runner(root, "multi_turn")
+            decisions = []
+
+            result = runner.run_session(
+                issue(),
+                "Do the work",
+                "Continue from prior work",
+                workspace,
+                attempt=4,
+                max_turns=3,
+                should_continue=lambda completed_turns: decisions.append(completed_turns) or completed_turns < 2,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.session_id, "thread-1-turn-2")
+            self.assertEqual(result.turn_count, 2)
+            self.assertEqual(decisions, [1, 2])
+            records = json.loads(record.read_text(encoding="utf-8"))
+            turn_starts = [message for message in records if message.get("method") == "turn/start"]
+            self.assertEqual(len(turn_starts), 2)
+            self.assertEqual(turn_starts[0]["params"]["thread_id"], "thread-1")
+            self.assertEqual(turn_starts[1]["params"]["thread_id"], "thread-1")
+            self.assertEqual(turn_starts[0]["params"]["prompt"], "Do the work")
+            self.assertEqual(turn_starts[1]["params"]["prompt"], "Continue from prior work")
+            self.assertEqual(turn_starts[1]["params"]["metadata"]["attempt"], 4)
 
     def test_protocol_turn_failure_maps_to_runner_error(self):
         with tempfile.TemporaryDirectory() as directory:

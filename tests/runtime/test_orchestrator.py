@@ -74,6 +74,18 @@ class FakeTracker:
         return list(self.states)
 
 
+class SequenceStateTracker(FakeTracker):
+    def __init__(self, candidates=None, state_batches=None):
+        super().__init__(candidates=candidates)
+        self.state_batches = list(state_batches or [])
+
+    def fetch_issue_states_by_ids(self, issue_ids):
+        self.state_fetches += 1
+        if not self.state_batches:
+            return []
+        return list(self.state_batches.pop(0))
+
+
 class FailingTerminalTracker(FakeTracker):
     def fetch_issues_by_states(self, state_names):
         raise TrackerError("terminal fetch failed")
@@ -111,6 +123,28 @@ class EventRunner(FakeRunner):
             for event in self.events:
                 on_event(event)
         return AgentRunResult(success=True, events=tuple(self.events))
+
+
+class SessionRunner(FakeRunner):
+    def __init__(self):
+        super().__init__()
+        self.continuation_prompts = []
+
+    def run_session(self, issue, prompt, continuation_prompt, workspace_path, attempt=None, *, max_turns, should_continue, on_event=None):
+        completed = 0
+        while completed < max_turns:
+            current_prompt = prompt if completed == 0 else continuation_prompt
+            self.prompts.append((issue, current_prompt, workspace_path, attempt))
+            self.continuation_prompts.append(current_prompt)
+            if on_event is not None:
+                on_event({"event": "session_started", "session_id": f"thread-1-turn-{completed + 1}", "thread_id": "thread-1", "turn_id": f"turn-{completed + 1}"})
+                on_event({"event": "turn_completed", "turn_id": f"turn-{completed + 1}"})
+            completed += 1
+            if completed >= max_turns:
+                break
+            if not should_continue(completed):
+                break
+        return AgentRunResult(success=True, session_id=f"thread-1-turn-{completed}", turn_count=completed)
 
 
 class BlockingRunner:
@@ -180,6 +214,69 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.tick_once()
             self.assertEqual(len(runner.prompts), 1)
             self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_worker_continues_on_same_session_while_issue_remains_active(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-34", state="Todo")
+            cfg = RuntimeConfig(**{**config(root).__dict__, "max_turns": 3})
+            tracker = SequenceStateTracker(
+                candidates=[candidate],
+                state_batches=[
+                    [issue("ABC-34", state="In Progress")],
+                    [issue("ABC-34", state="In Progress")],
+                ],
+            )
+            runner = SessionRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual(len(runner.prompts), 3)
+            self.assertEqual(runner.prompts[0][1], "Work on ABC-34")
+            self.assertEqual(runner.prompts[1][1], "Continue working on this issue. Inspect the current workspace state and proceed with the next useful step.")
+            self.assertEqual(runner.prompts[2][1], "Continue working on this issue. Inspect the current workspace state and proceed with the next useful step.")
+            self.assertEqual(tracker.state_fetches, 2)
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].status, "succeeded")
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_worker_stops_continuation_when_issue_leaves_active_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-35", state="Todo")
+            cfg = RuntimeConfig(**{**config(root).__dict__, "max_turns": 3})
+            tracker = SequenceStateTracker(
+                candidates=[candidate],
+                state_batches=[[issue("ABC-35", state="Human Review")]],
+            )
+            runner = SessionRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual(len(runner.prompts), 1)
+            self.assertEqual(tracker.state_fetches, 1)
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_worker_continuation_state_refresh_failure_schedules_retry(self):
+        class FailingStateTracker(FakeTracker):
+            def fetch_issue_states_by_ids(self, issue_ids):
+                self.state_fetches += 1
+                raise TrackerError("state refresh failed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-36", state="Todo")
+            cfg = RuntimeConfig(**{**config(root).__dict__, "max_turns": 3})
+            tracker = FailingStateTracker(candidates=[candidate])
+            runner = SessionRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual(len(runner.prompts), 1)
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].status, "failed")
+            self.assertEqual(orchestrator.state.retry_attempts[candidate.id].attempt, 1)
 
     def test_successful_worker_records_succeeded_attempt(self):
         with tempfile.TemporaryDirectory() as directory:

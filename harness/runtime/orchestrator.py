@@ -18,6 +18,9 @@ from .workflow import ConfigValidationError, validate_dispatch_config
 from .workspace import WorkspaceManager
 
 
+CONTINUATION_PROMPT = "Continue working on this issue. Inspect the current workspace state and proceed with the next useful step."
+
+
 def monotonic_ms() -> int:
     return int(time.monotonic() * 1000)
 
@@ -177,7 +180,7 @@ class Orchestrator:
                 emitted_via_callback = True
                 self.record_agent_event(issue.id, event)
 
-            result = self.agent_runner.run_turn(issue, prompt, workspace.path, attempt, on_event=on_event)
+            result = self._run_agent_session(issue, prompt, workspace.path, attempt, on_event)
             if not emitted_via_callback:
                 for event in result.events:
                     self.record_agent_event(issue.id, event)
@@ -207,6 +210,33 @@ class Orchestrator:
         finally:
             if workspace is not None:
                 self.workspace_manager.run_hook("after_run", workspace, fatal=False)
+
+    def _run_agent_session(self, issue: Issue, prompt: str, workspace_path, attempt: int | None, on_event) -> object:
+        run_session = getattr(self.agent_runner, "run_session", None)
+        if callable(run_session):
+            return run_session(
+                issue,
+                prompt,
+                CONTINUATION_PROMPT,
+                workspace_path,
+                attempt,
+                max_turns=self.config.max_turns,
+                should_continue=lambda completed_turns: self._should_continue_issue(issue.id),
+                on_event=on_event,
+            )
+        return self.agent_runner.run_turn(issue, prompt, workspace_path, attempt, on_event=on_event)
+
+    def _should_continue_issue(self, issue_id: str) -> bool:
+        refreshed = self.tracker.fetch_issue_states_by_ids([issue_id])
+        issue = next((item for item in refreshed if item.id == issue_id), None)
+        if issue is None:
+            return False
+        if not self.config.is_active_state(issue.state) or self.config.is_terminal_state(issue.state):
+            return False
+        with self._lock:
+            if issue_id in self.state.running:
+                self.state.running[issue_id].issue = issue
+        return True
 
     def _finish_future(self, issue_id: str, future: Future[None]) -> None:
         try:

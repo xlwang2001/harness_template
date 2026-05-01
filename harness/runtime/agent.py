@@ -26,11 +26,13 @@ class AgentRunResult:
     success: bool
     session_id: str | None = None
     error: str | None = None
+    turn_count: int = 0
     events: tuple[dict[str, Any], ...] = ()
 
 
 AgentEventCallback = Callable[[dict[str, Any]], None]
 ClientToolHandler = Callable[[Any], Any]
+ContinuationCallback = Callable[[int], bool]
 
 
 class CodexAgentRunner:
@@ -53,10 +55,35 @@ class CodexAgentRunner:
         attempt: int | None = None,
         on_event: AgentEventCallback | None = None,
     ) -> AgentRunResult:
+        return self.run_session(
+            issue,
+            prompt,
+            "Continue working on this issue. Inspect the current workspace state and proceed with the next useful step.",
+            workspace_path,
+            attempt=attempt,
+            max_turns=1,
+            should_continue=lambda completed_turns: False,
+            on_event=on_event,
+        )
+
+    def run_session(
+        self,
+        issue: Issue,
+        prompt: str,
+        continuation_prompt: str,
+        workspace_path: Path,
+        attempt: int | None = None,
+        *,
+        max_turns: int,
+        should_continue: ContinuationCallback,
+        on_event: AgentEventCallback | None = None,
+    ) -> AgentRunResult:
         workspace_path = workspace_path.resolve()
         ensure_contained(self.config.workspace_root, workspace_path)
         events: list[dict[str, Any]] = []
         process: subprocess.Popen[str] | None = None
+        session_id: str | None = None
+        completed_turns = 0
 
         def emit(event: Mapping[str, Any]) -> None:
             normalized = dict(event)
@@ -91,21 +118,29 @@ class CodexAgentRunner:
         try:
             client.initialize(workspace_path)
             thread_id = client.create_thread(issue, workspace_path)
-            turn_id = client.start_turn(issue, prompt, workspace_path, thread_id, attempt)
-            session_id = f"{thread_id}-{turn_id}"
-            emit(
-                {
-                    "event": "session_started",
-                    "session_id": session_id,
-                    "thread_id": thread_id,
-                    "turn_id": turn_id,
-                    "message": f"{issue.identifier}: {issue.title}",
-                }
-            )
-            client.stream_turn(turn_id)
+            while completed_turns < max(max_turns, 1):
+                current_prompt = prompt if completed_turns == 0 else continuation_prompt
+                turn_id = client.start_turn(issue, current_prompt, workspace_path, thread_id, attempt)
+                session_id = f"{thread_id}-{turn_id}"
+                emit(
+                    {
+                        "event": "session_started",
+                        "session_id": session_id,
+                        "thread_id": thread_id,
+                        "turn_id": turn_id,
+                        "turn_index": completed_turns + 1,
+                        "message": f"{issue.identifier}: {issue.title}",
+                    }
+                )
+                client.stream_turn(turn_id)
+                completed_turns += 1
+                if completed_turns >= max(max_turns, 1):
+                    break
+                if not should_continue(completed_turns):
+                    break
         finally:
             client.close()
-        return AgentRunResult(success=True, session_id=session_id, events=tuple(events))
+        return AgentRunResult(success=True, session_id=session_id, turn_count=completed_turns, events=tuple(events))
 
 
 class _JsonLineAppServerClient:
