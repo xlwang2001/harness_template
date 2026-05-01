@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from harness.runtime.agent import AgentRunResult
-from harness.runtime.models import BlockerRef, Issue, RuntimeConfig, RunningEntry
+from harness.runtime.models import BlockerRef, Issue, RetryEntry, RuntimeConfig, RunningEntry
 from harness.runtime.orchestrator import Orchestrator
 from harness.runtime.tracker import TrackerError
 from harness.runtime.workspace import WorkspaceManager
@@ -421,3 +421,101 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual(orchestrator.state.worker_futures, {})
             self.assertEqual(orchestrator.state.claimed, set())
             self.assertNotIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_snapshot_includes_spec_session_retry_totals_and_rate_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orchestrator, _ = self.build(root, FakeTracker())
+            started_at = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+            last_event_at = datetime(2026, 1, 1, 12, 1, tzinfo=timezone.utc)
+            workspace = root / "ABC-16"
+            running = issue("ABC-16", state="In Progress")
+            orchestrator.state.running[running.id] = RunningEntry(
+                issue=running,
+                started_at=started_at,
+                workspace_path=workspace,
+                session_id="thread-1-turn-2",
+                thread_id="thread-1",
+                turn_id="turn-2",
+                codex_app_server_pid="12345",
+                last_codex_event="turn.completed",
+                last_codex_timestamp=last_event_at,
+                last_codex_message="done",
+                codex_input_tokens=10,
+                codex_output_tokens=20,
+                codex_total_tokens=30,
+                last_reported_input_tokens=7,
+                last_reported_output_tokens=8,
+                last_reported_total_tokens=15,
+                turn_count=2,
+            )
+            orchestrator.state.retry_attempts["abc-17"] = RetryEntry(
+                issue_id="abc-17",
+                identifier="ABC-17",
+                attempt=3,
+                due_at_ms=123456,
+                error="transient failure",
+            )
+            orchestrator.state.codex_totals = {
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "total_tokens": 300,
+                "seconds_running": 42.5,
+            }
+            orchestrator.state.codex_rate_limits = {"primary": {"remaining": 12, "reset_at": "2026-01-01T12:05:00+00:00"}}
+
+            snapshot = orchestrator.snapshot()
+
+            self.assertEqual(snapshot["counts"], {"running": 1, "retrying": 1})
+            self.assertEqual(snapshot["codex_totals"]["seconds_running"], 42.5)
+            self.assertEqual(snapshot["rate_limits"]["primary"]["remaining"], 12)
+            self.assertEqual(
+                snapshot["retrying"],
+                [
+                    {
+                        "issue_id": "abc-17",
+                        "identifier": "ABC-17",
+                        "attempt": 3,
+                        "due_at_ms": 123456,
+                        "error": "transient failure",
+                    }
+                ],
+            )
+            self.assertEqual(len(snapshot["running"]), 1)
+            row = snapshot["running"][0]
+            self.assertEqual(row["issue_id"], "abc-16")
+            self.assertEqual(row["issue_identifier"], "ABC-16")
+            self.assertEqual(row["state"], "In Progress")
+            self.assertEqual(row["workspace_path"], str(workspace))
+            self.assertEqual(row["session_id"], "thread-1-turn-2")
+            self.assertEqual(row["thread_id"], "thread-1")
+            self.assertEqual(row["turn_id"], "turn-2")
+            self.assertEqual(row["codex_app_server_pid"], "12345")
+            self.assertEqual(row["turn_count"], 2)
+            self.assertEqual(row["last_event"], "turn.completed")
+            self.assertEqual(row["last_codex_event"], "turn.completed")
+            self.assertEqual(row["last_codex_timestamp"], last_event_at.isoformat())
+            self.assertEqual(row["last_message"], "done")
+            self.assertEqual(row["last_codex_message"], "done")
+            self.assertEqual(row["codex_input_tokens"], 10)
+            self.assertEqual(row["codex_output_tokens"], 20)
+            self.assertEqual(row["codex_total_tokens"], 30)
+            self.assertEqual(row["last_reported_input_tokens"], 7)
+            self.assertEqual(row["last_reported_output_tokens"], 8)
+            self.assertEqual(row["last_reported_total_tokens"], 15)
+            self.assertEqual(row["started_at"], started_at.isoformat())
+
+    def test_snapshot_is_stable_when_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator, _ = self.build(Path(directory), FakeTracker())
+
+            snapshot = orchestrator.snapshot()
+
+            self.assertEqual(snapshot["counts"], {"running": 0, "retrying": 0})
+            self.assertEqual(snapshot["running"], [])
+            self.assertEqual(snapshot["retrying"], [])
+            self.assertEqual(
+                snapshot["codex_totals"],
+                {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0.0},
+            )
+            self.assertIsNone(snapshot["rate_limits"])

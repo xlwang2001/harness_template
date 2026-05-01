@@ -779,7 +779,7 @@ Do not commit secrets.
 harness validate --target /path/to/your/repo
 ```
 
-Fix all errors before running Symphony.
+Fix all errors before running the hardened runtime.
 
 ## 6. Configure Linear states
 
@@ -796,7 +796,7 @@ Recommended initial states:
 
 You may rename these, but keep the meaning clear in `docs/OPERATING_MODEL.md` and `WORKFLOW.md`.
 
-## 7. Run Symphony
+## 7. Run the hardened runtime
 
 ```bash
 harness run --workflow /path/to/your/repo/WORKFLOW.md
@@ -810,7 +810,7 @@ Create a low-risk issue:
 Update docs/README.md to add one sentence explaining the local development command.
 ```
 
-Move it to an active state and confirm that Symphony creates a workspace, starts Codex, produces a PR or patch, leaves a review packet, and comments or moves the issue according to your workflow.
+Move it to an active state and confirm that the hardened runtime creates a workspace, starts Codex, produces a PR or patch, leaves a review packet, and comments or moves the issue according to your workflow.
 ```
 
 ---

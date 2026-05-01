@@ -21,7 +21,7 @@
 - [x] Implement workspace creation, reuse, cleanup, and lifecycle hook execution.
 - [x] Implement Linear-compatible tracker client interfaces and issue normalization.
 - [x] Add Linear tests for empty state fetch, pagination, malformed payloads, GraphQL errors, HTTP errors, and transport errors.
-- [x] Implement orchestrator eligibility, priority sorting, bounded concurrency, reconciliation, stall detection, retry scheduling, and runtime snapshots.
+- [x] Implement orchestrator eligibility, priority sorting, bounded concurrency, reconciliation, stall detection, retry scheduling, and initial runtime snapshot export.
 - [x] Make issue dispatch non-blocking through an executor boundary.
 - [x] Implement due retry processing in the service loop.
 - [x] Keep Codex app-server behavior behind `CodexAgentRunner`.
@@ -46,7 +46,10 @@
 - [x] Implement cancellation or termination handling for active workers when tracker state becomes terminal or non-active.
 - [x] Track worker futures in runtime state so reconciliation can cancel or mark active runs deterministically.
 - [x] Add runtime shutdown handling for keyboard interrupt and process termination.
-- [ ] Add snapshot tests for running rows, retry rows, aggregate token totals, runtime seconds, and rate limits.
+- [x] Add snapshot tests for running rows, retry rows, aggregate token totals, runtime seconds, and rate limits.
+- [ ] Add per-tick dispatch preflight validation that keeps reconciliation active when dispatch config is invalid.
+- [ ] Align `after_run` hook execution with SPEC so it runs after success, failure, timeout, or cancellation once a workspace exists.
+- [ ] Add run-attempt lifecycle reason tests for succeeded, failed, timed out, stalled, and canceled-by-reconciliation outcomes.
 - [ ] Implement token and rate-limit aggregation from Codex app-server events.
 - [ ] Implement a real Codex app-server protocol client behind `CodexAgentRunner`.
 - [ ] Add Codex protocol tests for startup handshake, thread creation, turn streaming, completion, failure, cancellation, timeout, and subprocess exit.

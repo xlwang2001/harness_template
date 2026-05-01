@@ -114,12 +114,18 @@ class RunningEntry:
     started_at: datetime
     workspace_path: Path | None = None
     session_id: str | None = None
+    thread_id: str | None = None
+    turn_id: str | None = None
+    codex_app_server_pid: str | None = None
     last_codex_event: str | None = None
     last_codex_timestamp: datetime | None = None
     last_codex_message: str | None = None
     codex_input_tokens: int = 0
     codex_output_tokens: int = 0
     codex_total_tokens: int = 0
+    last_reported_input_tokens: int = 0
+    last_reported_output_tokens: int = 0
+    last_reported_total_tokens: int = 0
     turn_count: int = 0
 
 
