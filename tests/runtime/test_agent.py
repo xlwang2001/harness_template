@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from harness.runtime.agent import AgentRunnerError, CodexAgentRunner
+from harness.runtime.client_tools import ClientToolResult
 from harness.runtime.models import Issue, RuntimeConfig
 from harness.runtime.workspace import WorkspaceError
 
@@ -107,6 +108,11 @@ for line in sys.stdin:
             supported = json.loads(sys.stdin.readline())
             record(supported)
             send({"event": "turn_completed"})
+        elif mode == "linear_graphql":
+            send({"event": "client_tool_call", "tool_call_id": "linear-1", "tool_name": "linear_graphql", "arguments": {"query": "query A { viewer { id } }"}})
+            result = json.loads(sys.stdin.readline())
+            record(result)
+            send({"event": "turn_completed"})
         elif mode == "turn_timeout":
             time.sleep(2)
         elif mode == "exit_during_turn":
@@ -203,6 +209,45 @@ class CodexAgentRunnerTests(unittest.TestCase):
             self.assertEqual(tool_results[1]["params"]["tool_call_id"], "tool-supported")
             self.assertTrue(tool_results[1]["params"]["success"])
             self.assertEqual(tool_results[1]["params"]["output"], {"echoed": {"value": 2}})
+
+    def test_protocol_advertises_and_returns_successful_linear_graphql_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner, workspace, record = self.build_runner(
+                root,
+                "linear_graphql",
+                client_tools={"linear_graphql": lambda arguments: ClientToolResult(True, {"data": {"ok": True}, "arguments": arguments})},
+            )
+            events = []
+
+            runner.run_turn(issue(), "Do the work", workspace, on_event=events.append)
+
+            records = json.loads(record.read_text(encoding="utf-8"))
+            self.assertEqual(records[0]["params"]["client_tools"], [{"name": "linear_graphql"}])
+            tool_result = next(message for message in records if message.get("method") == "tool/result")
+            self.assertEqual(tool_result["params"]["tool_call_id"], "linear-1")
+            self.assertEqual(tool_result["params"]["tool_name"], "linear_graphql")
+            self.assertTrue(tool_result["params"]["success"])
+            self.assertEqual(tool_result["params"]["output"]["data"], {"ok": True})
+            self.assertIn("client_tool_completed", [event["event"] for event in events])
+
+    def test_protocol_returns_failed_linear_graphql_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner, workspace, record = self.build_runner(
+                root,
+                "linear_graphql",
+                client_tools={"linear_graphql": lambda arguments: ClientToolResult(False, {"error": "invalid_query"})},
+            )
+            events = []
+
+            runner.run_turn(issue(), "Do the work", workspace, on_event=events.append)
+
+            records = json.loads(record.read_text(encoding="utf-8"))
+            tool_result = next(message for message in records if message.get("method") == "tool/result")
+            self.assertFalse(tool_result["params"]["success"])
+            self.assertEqual(tool_result["params"]["output"], {"error": "invalid_query"})
+            self.assertIn("client_tool_failed", [event["event"] for event in events])
 
     def test_protocol_read_timeout_maps_to_response_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

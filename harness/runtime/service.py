@@ -10,6 +10,7 @@ from pathlib import Path
 from types import FrameType
 
 from .agent import CodexAgentRunner
+from .client_tools import build_client_tools
 from .orchestrator import Orchestrator
 from .runtime_logging import emit_runtime_log
 from .tracker import LinearClient
@@ -33,7 +34,7 @@ class RuntimeService:
         workflow, config = self.reloader.load_initial()
         tracker = LinearClient(config)
         workspace_manager = WorkspaceManager(config, logger=self.logger)
-        agent_runner = CodexAgentRunner(config)
+        agent_runner = CodexAgentRunner(config, client_tools=build_client_tools(config))
         return Orchestrator(config, tracker, workspace_manager, agent_runner, workflow.prompt_template, logger=self.logger)
 
     def run_forever(self) -> int:

@@ -55,8 +55,8 @@
 - [x] Add Codex protocol tests for startup handshake, thread creation, turn streaming, completion, failure, cancellation, timeout, and subprocess exit.
 - [x] Add user-input-required handling policy and tests so runs never stall indefinitely.
 - [x] Add approval/tool-call handling policy tests for supported and unsupported dynamic tool calls.
-- [ ] Add optional `linear_graphql` client-side tool extension.
-- [ ] Add tests for `linear_graphql` valid queries, invalid inputs, multiple operations, missing auth, GraphQL errors, and transport failures.
+- [x] Add optional `linear_graphql` client-side tool extension.
+- [x] Add tests for `linear_graphql` valid queries, invalid inputs, multiple operations, missing auth, GraphQL errors, and transport failures.
 - [ ] Add optional HTTP status API for `/api/v1/state`, issue detail, and refresh.
 - [ ] Add dashboard/API tests for JSON error envelopes, unsupported methods, and refresh coalescing.
 - [ ] Add real integration test profile gated by explicit environment variables.

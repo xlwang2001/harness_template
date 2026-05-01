@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .client_tools import ClientToolResult
 from .models import Issue, RuntimeConfig
 from .workspace import ensure_contained
 
@@ -241,8 +242,15 @@ class _JsonLineAppServerClient:
             self.write_message(_tool_result(call_id, tool_name, False, {"error": str(exc)}))
             self.emit({"event": "client_tool_failed", "tool_name": tool_name, "tool_call_id": call_id, "message": str(exc)})
             return
-        self.write_message(_tool_result(call_id, tool_name, True, result))
-        self.emit({"event": "client_tool_completed", "tool_name": tool_name, "tool_call_id": call_id})
+        if isinstance(result, ClientToolResult):
+            success = result.success
+            output = result.output
+        else:
+            success = True
+            output = result
+        self.write_message(_tool_result(call_id, tool_name, success, output))
+        event_name = "client_tool_completed" if success else "client_tool_failed"
+        self.emit({"event": event_name, "tool_name": tool_name, "tool_call_id": call_id})
 
     def request(self, method: str, params: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
         request_id = self._next_id
