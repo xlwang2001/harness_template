@@ -66,12 +66,14 @@ class FakeOrchestrator:
 
 
 class FakeService(RuntimeService):
-    def __init__(self, orchestrator):
-        super().__init__(None)
+    def __init__(self, orchestrator, **kwargs):
+        super().__init__(None, **kwargs)
         self.orchestrator = orchestrator
         self.reloader = FakeReloader()
 
     def build_orchestrator(self):
+        if self.orchestrator is not None:
+            self.orchestrator.config = self._apply_runtime_overrides(self.orchestrator.config)
         return self.orchestrator
 
 
@@ -191,3 +193,98 @@ class RuntimeServiceTests(unittest.TestCase):
                 service_module.RuntimeStatusServer = original_server
             self.assertEqual(code, 0)
             self.assertEqual(calls, [("init", "127.0.0.1", 0), ("start",), ("stop",)])
+
+    def test_port_override_enables_status_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(**{**config(root).__dict__, "server_enabled": False, "server_port": 8765})
+            calls = []
+
+            class ServerOrchestrator(FakeOrchestrator):
+                def tick_once(self):
+                    super().tick_once()
+                    raise KeyboardInterrupt()
+
+            class FakeStatusServer:
+                def __init__(self, orchestrator, *, host, port, request_refresh):
+                    calls.append(("init", host, port))
+                    self.server_address = (host, port)
+
+                def start(self):
+                    calls.append(("start",))
+
+                def stop(self):
+                    calls.append(("stop",))
+
+            original_server = service_module.RuntimeStatusServer
+            try:
+                service_module.RuntimeStatusServer = FakeStatusServer
+                service = FakeService(ServerOrchestrator(cfg), server_port_override=0)
+                code = self.run_service(service)
+            finally:
+                service_module.RuntimeStatusServer = original_server
+            self.assertEqual(code, 0)
+            self.assertEqual(calls, [("init", "127.0.0.1", 0), ("start",), ("stop",)])
+
+    def test_reload_applies_port_override_without_rebinding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initial = RuntimeConfig(**{**config(root).__dict__, "server_enabled": False, "server_port": 8765})
+            reloaded = RuntimeConfig(**{**config(root).__dict__, "server_enabled": False, "server_port": 9999})
+
+            class OneReload:
+                last_error = None
+
+                def __init__(self):
+                    self.used = False
+
+                def reload_if_changed(self):
+                    if self.used:
+                        return None
+                    self.used = True
+                    return type("Workflow", (), {"prompt_template": "Work"})(), reloaded
+
+            class ReloadOrchestrator(FakeOrchestrator):
+                def apply_reload(self, cfg, prompt_template):
+                    self.config = cfg
+
+                def tick_once(self):
+                    super().tick_once()
+                    raise KeyboardInterrupt()
+
+            orchestrator = ReloadOrchestrator(initial)
+            service = FakeService(orchestrator, server_port_override=0)
+            service.reloader = OneReload()
+            code = self.run_service(service)
+            self.assertEqual(code, 0)
+            self.assertTrue(orchestrator.config.server_enabled)
+            self.assertEqual(orchestrator.config.server_port, 0)
+
+    def test_status_server_start_failure_does_not_crash_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(**{**config(root).__dict__, "server_enabled": True, "server_port": 0})
+            calls = []
+
+            class ServerOrchestrator(FakeOrchestrator):
+                def tick_once(self):
+                    super().tick_once()
+                    raise KeyboardInterrupt()
+
+            class FailingStatusServer:
+                def __init__(self, orchestrator, *, host, port, request_refresh):
+                    calls.append(("init", host, port))
+
+                def start(self):
+                    calls.append(("start",))
+                    raise OSError("port unavailable")
+
+            original_server = service_module.RuntimeStatusServer
+            try:
+                service_module.RuntimeStatusServer = FailingStatusServer
+                service = FakeService(ServerOrchestrator(cfg))
+                code = self.run_service(service)
+            finally:
+                service_module.RuntimeStatusServer = original_server
+            self.assertEqual(code, 0)
+            self.assertEqual(calls, [("init", "127.0.0.1", 0), ("start",)])

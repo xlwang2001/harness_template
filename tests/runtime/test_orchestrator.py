@@ -514,6 +514,20 @@ class OrchestratorTests(unittest.TestCase):
             capped_delay = orchestrator.state.retry_attempts[candidate.id].due_at_ms
             self.assertLessEqual(capped_delay - first_delay, 25000)
 
+    def test_retried_abnormal_exit_increments_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-31")
+            cfg = config(root)
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), FailingRunner(), "Work", executor=InlineExecutor())
+            orchestrator.schedule_retry(candidate, attempt=2, error="previous failure")
+            orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
+
+            orchestrator.process_due_retries()
+
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].attempt, 2)
+            self.assertEqual(orchestrator.state.retry_attempts[candidate.id].attempt, 3)
+
     def test_continuation_retry_releases_claim_when_candidate_disappears(self):
         with tempfile.TemporaryDirectory() as directory:
             candidate = issue("ABC-7")
@@ -674,10 +688,10 @@ class OrchestratorTests(unittest.TestCase):
             }
             orchestrator.state.codex_rate_limits = {"primary": {"remaining": 12, "reset_at": "2026-01-01T12:05:00+00:00"}}
 
-            snapshot = orchestrator.snapshot()
+            snapshot = orchestrator.snapshot(now=started_at + timedelta(seconds=10))
 
             self.assertEqual(snapshot["counts"], {"running": 1, "retrying": 1})
-            self.assertEqual(snapshot["codex_totals"]["seconds_running"], 42.5)
+            self.assertEqual(snapshot["codex_totals"]["seconds_running"], 52.5)
             self.assertEqual(snapshot["rate_limits"]["primary"]["remaining"], 12)
             self.assertEqual(
                 snapshot["retrying"],
@@ -729,6 +743,35 @@ class OrchestratorTests(unittest.TestCase):
                 {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0.0},
             )
             self.assertIsNone(snapshot["rate_limits"])
+
+    def test_finished_attempt_adds_runtime_seconds_to_totals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-32")
+            orchestrator, _ = self.build(root, FakeTracker())
+            orchestrator.state.running[candidate.id] = RunningEntry(
+                issue=candidate,
+                started_at=datetime.now(timezone.utc) - timedelta(seconds=2),
+                workspace_path=root / "ABC-32",
+            )
+
+            orchestrator.finish_issue(candidate.id, normal=True, error=None)
+
+            self.assertGreaterEqual(orchestrator.state.codex_totals["seconds_running"], 1.5)
+
+    def test_session_lifecycle_logs_include_session_id_when_known(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-33")
+            cfg = config(root)
+            runner = EventRunner([{"event": "session_started", "session_id": "thread-1-turn-1"}])
+            logger = logging.getLogger("harness.runtime.test.session_id")
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor(), logger=logger)
+
+            with self.assertLogs(logger, level="INFO") as captured:
+                orchestrator.tick_once()
+
+            self.assertIn("session_id=thread-1-turn-1", "\n".join(captured.output))
 
     def test_agent_event_updates_live_session_tokens_and_rate_limits(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subcommands.add_parser("run", help="run the hardened SPEC-compatible runtime")
     run_parser.add_argument("workflow", nargs="?", type=Path, help="path to WORKFLOW.md; defaults to ./WORKFLOW.md")
+    run_parser.add_argument("--port", type=_nonnegative_int, help="enable the status API on PORT; overrides workflow server.port")
     run_parser.add_argument("--workflow", dest="workflow_option", type=Path, help=argparse.SUPPRESS)
     run_parser.set_defaults(func=cmd_run)
     return parser
@@ -75,10 +76,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"workflow file not found: {workflow}", file=sys.stderr)
         return 2
     try:
-        return RuntimeService(workflow).run_forever()
+        return RuntimeService(workflow, server_port_override=args.port).run_forever()
     except RuntimeServiceError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+
+def _nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("port must be a non-negative integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("port must be a non-negative integer")
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> int:

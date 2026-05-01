@@ -60,6 +60,12 @@
 - [x] Add optional HTTP status API for `/api/v1/state`, issue detail, and refresh.
 - [x] Add dashboard/API tests for JSON error envelopes, unsupported methods, and refresh coalescing.
 - [x] Add real integration test profile gated by explicit environment variables.
+- [x] Fix strict prompt rendering so unknown filters, malformed interpolation, and unsupported template expressions fail.
+- [x] Align HTTP status API enablement with SPEC: `server.port` enables the server and `harness run --port` overrides workflow config.
+- [x] Fix retry/runtime accounting drift for retried failure attempt increments and live `seconds_running` snapshots.
+- [x] Improve observability conformance for session IDs in lifecycle logs, dashboard state rendering, and status-surface failure isolation.
+- [x] Tighten `linear_graphql` to the documented query/mutation extension surface by rejecting subscriptions.
+- [ ] Implement true in-worker continuation turns on the same live Codex thread up to `agent.max_turns`.
 - [ ] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 - [ ] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.
 - [ ] Add release notes and compatibility policy for generated target repos.

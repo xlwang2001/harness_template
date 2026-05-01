@@ -74,8 +74,8 @@ class FakeOrchestrator:
             "counts": {"running": len(self.state.running), "retrying": len(self.state.retry_attempts)},
             "running": [{"issue_identifier": "ABC-1"}],
             "retrying": [retry.__dict__ for retry in self.state.retry_attempts.values()],
-            "codex_totals": self.state.codex_totals,
-            "rate_limits": None,
+            "codex_totals": {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7, "seconds_running": 12.5},
+            "rate_limits": {"primary": {"remaining": 5}},
         }
 
     def issue_detail(self, identifier):
@@ -168,6 +168,21 @@ class RuntimeHTTPTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertIn("text/html", content_type)
             self.assertIn("/api/v1/state", body)
+            self.assertIn("Running: 1", body)
+            self.assertIn("Retrying: 1", body)
+            self.assertIn("Total tokens: 7", body)
+            self.assertIn("Rate limits: present", body)
+
+    def test_observability_failures_return_json_error(self):
+        class BrokenOrchestrator(FakeOrchestrator):
+            def snapshot(self):
+                raise RuntimeError("snapshot failed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            refresh = RefreshRecorder()
+            status, payload = self.request_json("GET", "/api/v1/state", BrokenOrchestrator(Path(directory)), refresh)
+            self.assertEqual(status, 503)
+            self.assertEqual(payload["error"]["code"], "status_unavailable")
 
 
 if __name__ == "__main__":

@@ -192,7 +192,9 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
     hooks = _map(config.get("hooks"))
     agent = _map(config.get("agent"))
     codex = _map(config.get("codex"))
-    server = _map(config.get("server"))
+    raw_server = config.get("server")
+    server = _map(raw_server)
+    server_port_present = isinstance(raw_server, dict) and "port" in raw_server
 
     tracker_kind = str(tracker.get("kind") or "linear")
     if tracker_kind != "linear":
@@ -233,7 +235,7 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
         approval_policy=str(codex.get("approval_policy") or "on-request"),
         thread_sandbox=str(codex.get("thread_sandbox") or "workspace-write"),
         turn_sandbox_policy=str(codex.get("turn_sandbox_policy") or "workspace-write"),
-        server_enabled=_bool(server.get("enabled"), False),
+        server_enabled=_bool(server.get("enabled"), False) or server_port_present,
         server_host=str(server.get("host") or "127.0.0.1"),
         server_port=_nonnegative_int(server.get("port"), 8765, "server.port"),
     )

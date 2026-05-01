@@ -5,6 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
+import harness.cli as cli_module
 from harness.cli import main
 
 
@@ -96,3 +97,30 @@ Work on {{ issue.identifier }}
                     os.environ["LINEAR_API_KEY"] = old_key
             self.assertEqual(code, 1)
             self.assertIn("runtime startup failed", stderr)
+
+    def test_run_passes_port_override_to_runtime_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / "WORKFLOW.md"
+            workflow.write_text("Work on {{ issue.identifier }}", encoding="utf-8")
+            calls = []
+
+            class FakeRuntimeService:
+                def __init__(self, workflow_path, *, server_port_override=None):
+                    calls.append((workflow_path, server_port_override))
+
+                def run_forever(self):
+                    return 0
+
+            original = cli_module.RuntimeService
+            try:
+                cli_module.RuntimeService = FakeRuntimeService
+                code, _, _ = run_cli(["run", "--port", "0", str(workflow)])
+            finally:
+                cli_module.RuntimeService = original
+
+            self.assertEqual(code, 0)
+            self.assertEqual(calls, [(workflow.resolve(), 0)])
+
+    def test_run_rejects_negative_port(self):
+        with self.assertRaises(SystemExit):
+            run_cli(["run", "--port", "-1"])

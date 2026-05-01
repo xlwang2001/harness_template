@@ -6,6 +6,7 @@ import logging
 import signal
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import FrameType
 
@@ -24,8 +25,9 @@ class RuntimeServiceError(RuntimeError):
 
 
 class RuntimeService:
-    def __init__(self, workflow_path: Path | None = None):
+    def __init__(self, workflow_path: Path | None = None, *, server_port_override: int | None = None):
         self.workflow_path = workflow_path
+        self.server_port_override = server_port_override
         self.logger = logging.getLogger("harness.runtime")
         self.reloader = WorkflowReloader(workflow_path)
         self.shutdown_requested = False
@@ -36,6 +38,7 @@ class RuntimeService:
 
     def build_orchestrator(self) -> Orchestrator:
         workflow, config = self.reloader.load_initial()
+        config = self._apply_runtime_overrides(config)
         tracker = LinearClient(config)
         workspace_manager = WorkspaceManager(config, logger=self.logger)
         agent_runner = CodexAgentRunner(config, client_tools=build_client_tools(config))
@@ -54,20 +57,36 @@ class RuntimeService:
                 raise RuntimeServiceError(f"runtime startup failed: {exc}") from exc
             orchestrator.startup_terminal_cleanup()
             if orchestrator.config.server_enabled:
-                status_server = RuntimeStatusServer(
-                    orchestrator,
-                    host=orchestrator.config.server_host,
-                    port=orchestrator.config.server_port,
-                    request_refresh=self.request_refresh,
-                )
-                status_server.start()
-                emit_runtime_log(
-                    self.logger,
-                    "status_server_started",
-                    host=status_server.server_address[0],
-                    port=status_server.server_address[1],
-                    secrets=(orchestrator.config.tracker_api_key,),
-                )
+                try:
+                    status_server = RuntimeStatusServer(
+                        orchestrator,
+                        host=orchestrator.config.server_host,
+                        port=orchestrator.config.server_port,
+                        request_refresh=self.request_refresh,
+                    )
+                    status_server.start()
+                except Exception as exc:
+                    if status_server is not None:
+                        try:
+                            status_server.stop()
+                        except Exception:
+                            pass
+                    status_server = None
+                    emit_runtime_log(
+                        self.logger,
+                        "status_server_failed",
+                        level=logging.WARNING,
+                        error=exc,
+                        secrets=(orchestrator.config.tracker_api_key,),
+                    )
+                else:
+                    emit_runtime_log(
+                        self.logger,
+                        "status_server_started",
+                        host=status_server.server_address[0],
+                        port=status_server.server_address[1],
+                        secrets=(orchestrator.config.tracker_api_key,),
+                    )
             emit_runtime_log(
                 self.logger,
                 "runtime_started",
@@ -80,6 +99,7 @@ class RuntimeService:
                 reloaded = self.reloader.reload_if_changed()
                 if reloaded is not None:
                     workflow, config = reloaded
+                    config = self._apply_runtime_overrides(config)
                     orchestrator.apply_reload(config, workflow.prompt_template)
                     emit_runtime_log(
                         self.logger,
@@ -171,3 +191,8 @@ class RuntimeService:
         if self._refresh_event.wait(timeout):
             return self.consume_refresh_requested()
         return False
+
+    def _apply_runtime_overrides(self, config):
+        if self.server_port_override is None:
+            return config
+        return replace(config, server_enabled=True, server_port=self.server_port_override)

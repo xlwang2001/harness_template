@@ -188,6 +188,7 @@ class Orchestrator:
                 issue_identifier=issue.identifier,
                 workspace=workspace.path,
                 attempt=attempt,
+                session_id=self._running_session_id(issue.id),
                 secrets=(self.config.tracker_api_key,),
             )
         except (AgentRunnerError, Exception) as exc:
@@ -199,6 +200,7 @@ class Orchestrator:
                 issue_identifier=issue.identifier,
                 attempt=attempt,
                 error=exc,
+                session_id=self._running_session_id(issue.id),
                 secrets=(self.config.tracker_api_key,),
             )
             raise RuntimeError(str(exc)) from exc
@@ -243,7 +245,7 @@ class Orchestrator:
                     error=error,
                     secrets=(self.config.tracker_api_key,),
                 )
-                self.schedule_retry(entry.issue, attempt=1, error=error, continuation=False)
+                self.schedule_retry(entry.issue, attempt=(entry.attempt or 0) + 1, error=error, continuation=False)
 
     def record_agent_event(self, issue_id: str, event: Mapping[str, Any]) -> None:
         with self._lock:
@@ -286,6 +288,8 @@ class Orchestrator:
             entry.codex_total_tokens = total_tokens
 
     def _record_attempt_locked(self, entry: RunningEntry, *, status: str, error: str | None) -> None:
+        duration = max((datetime.now(timezone.utc) - entry.started_at).total_seconds(), 0.0)
+        self.state.codex_totals["seconds_running"] += duration
         self.state.last_attempts[entry.issue.id] = RunAttemptRecord(
             issue_id=entry.issue.id,
             identifier=entry.issue.identifier,
@@ -461,9 +465,10 @@ class Orchestrator:
             self.workspace_manager.cleanup_for_issue(issue.identifier)
         emit_runtime_log(self.logger, "startup_cleanup_completed", cleaned=len(terminal_issues), secrets=(self.config.tracker_api_key,))
 
-    def snapshot(self) -> dict[str, object]:
+    def snapshot(self, *, now: datetime | None = None) -> dict[str, object]:
+        now = now or datetime.now(timezone.utc)
         return {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": now.isoformat(),
             "counts": {"running": len(self.state.running), "retrying": len(self.state.retry_attempts)},
             "running": [
                 {
@@ -492,9 +497,17 @@ class Orchestrator:
                 for entry in self.state.running.values()
             ],
             "retrying": [retry.__dict__ for retry in self.state.retry_attempts.values()],
-            "codex_totals": self.state.codex_totals,
+            "codex_totals": self._codex_totals_for_snapshot(now),
             "rate_limits": self.state.codex_rate_limits,
         }
+
+    def _codex_totals_for_snapshot(self, now: datetime) -> dict[str, float]:
+        totals = dict(self.state.codex_totals)
+        active_seconds = 0.0
+        for entry in self.state.running.values():
+            active_seconds += max((now - entry.started_at).total_seconds(), 0.0)
+        totals["seconds_running"] = float(totals.get("seconds_running", 0.0)) + active_seconds
+        return totals
 
     def issue_detail(self, identifier: str) -> dict[str, object] | None:
         wanted = identifier.lower()
@@ -571,6 +584,11 @@ class Orchestrator:
             "status": attempt.status,
             "error": attempt.error,
         }
+
+    def _running_session_id(self, issue_id: str) -> str | None:
+        with self._lock:
+            entry = self.state.running.get(issue_id)
+            return entry.session_id if entry else None
 
 
 class Submitter(Protocol):

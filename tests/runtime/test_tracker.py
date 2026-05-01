@@ -182,6 +182,7 @@ class TrackerTests(unittest.TestCase):
             ({"query": "query A { a }", "variables": []}, "invalid_variables"),
             ({"query": "query A { a }", "operationName": "A"}, "operation_name_not_supported"),
             ("query A { a } mutation B { b }", "invalid_operation_count"),
+            ("subscription A { issueUpdated { id } }", "unsupported_operation"),
         ]
         for arguments, error in cases:
             with self.subTest(error=error):

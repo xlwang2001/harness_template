@@ -19,7 +19,7 @@ User-input-required events fail the current run immediately as `turn_input_requi
 
 When the runtime uses the Linear tracker, it registers the optional `linear_graphql` client-side tool. The tool reuses configured Linear credentials, accepts one GraphQL operation per call, and returns structured success or failure payloads that the agent can inspect without reading raw tokens.
 
-The optional status API is disabled by default. Enable it with `server.enabled: true`; it binds to `server.host` (default `127.0.0.1`) and `server.port` (default `8765`). It serves `/`, `GET /api/v1/state`, `GET /api/v1/<issue_identifier>`, and `POST /api/v1/refresh`. Listener changes require a runtime restart.
+The optional status API is disabled by default. Enable it with `server.port` in `WORKFLOW.md` or with `harness run --port PORT`; the CLI port overrides workflow config. `server.enabled: true` remains accepted as a compatibility shorthand and uses port `8765` when no port is given. The server binds to `server.host` (default `127.0.0.1`) and serves `/`, `GET /api/v1/state`, `GET /api/v1/<issue_identifier>`, and `POST /api/v1/refresh`. Listener changes require a runtime restart.
 
 ## Real Integration Profile
 

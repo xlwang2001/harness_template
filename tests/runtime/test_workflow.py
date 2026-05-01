@@ -87,6 +87,69 @@ Issue {{ issue.identifier }}
             self.assertEqual(config.server_host, "127.0.0.1")
             self.assertEqual(config.server_port, 0)
 
+    def test_server_port_presence_enables_status_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+codex:
+  command: "true"
+server:
+  port: 0
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertTrue(config.server_enabled)
+            self.assertEqual(config.server_port, 0)
+
+    def test_server_enabled_without_port_uses_default_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+codex:
+  command: "true"
+server:
+  enabled: true
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertTrue(config.server_enabled)
+            self.assertEqual(config.server_port, 8765)
+
+    def test_negative_server_port_fails_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+server:
+  port: -1
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigValidationError):
+                resolve_config(load_workflow(path))
+
     def test_dispatch_validation_requires_env(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "WORKFLOW.md"
@@ -141,6 +204,10 @@ Issue {{ issue.identifier }}
         self.assertEqual(render_prompt("{{ issue.identifier }}", issue), "ABC-1")
         with self.assertRaises(TemplateRenderError):
             render_prompt("{{ issue.missing }}", issue)
+        for template in ("{{ issue.identifier | upcase }}", "{{ issue.identifier ", "{{ }}", "{{ issue[0] }}", "}} {{ issue.identifier"):
+            with self.subTest(template=template):
+                with self.assertRaises(TemplateRenderError):
+                    render_prompt(template, issue)
 
     def test_documented_yaml_subset_rejects_unsupported_shapes(self):
         with self.assertRaises(WorkflowParseError):

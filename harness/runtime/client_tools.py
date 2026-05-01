@@ -85,6 +85,8 @@ def _parse_linear_graphql_arguments(arguments: Any) -> ClientToolResult:
         return _failure("empty_query")
     if not _has_single_graphql_operation(query):
         return _failure("invalid_operation_count")
+    if _graphql_operation_kind(query) == "subscription":
+        return _failure("unsupported_operation")
     return ClientToolResult(success=True, output={"query": query, "variables": variables})
 
 
@@ -95,6 +97,12 @@ def _has_single_graphql_operation(query: str) -> bool:
     if stripped.startswith("{"):
         return len(operations) == 0
     return len(operations) == 1
+
+
+def _graphql_operation_kind(query: str) -> str | None:
+    sanitized = _strip_graphql_comments_and_strings(query)
+    match = re.search(r"\b(query|mutation|subscription)\b", sanitized)
+    return match.group(1) if match else "query"
 
 
 def _strip_graphql_comments_and_strings(query: str) -> str:
