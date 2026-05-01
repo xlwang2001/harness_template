@@ -14,6 +14,7 @@ from .models import Issue, RetryEntry, RunningEntry, RuntimeConfig, RuntimeState
 from .prompt import render_prompt
 from .runtime_logging import emit_runtime_log
 from .tracker import IssueTrackerClient, TrackerError
+from .workflow import ConfigValidationError, validate_dispatch_config
 from .workspace import WorkspaceManager
 
 
@@ -101,6 +102,11 @@ class Orchestrator:
     def tick_once(self) -> None:
         emit_runtime_log(self.logger, "tick_started", running=len(self.state.running), retrying=len(self.state.retry_attempts), secrets=(self.config.tracker_api_key,))
         self.reconcile_running()
+        try:
+            validate_dispatch_config(self.config)
+        except ConfigValidationError as exc:
+            emit_runtime_log(self.logger, "dispatch_preflight_failed", level=logging.ERROR, error=exc, secrets=(self.config.tracker_api_key,))
+            return
         self.process_due_retries()
         try:
             candidates = self.tracker.fetch_candidate_issues()

@@ -1,3 +1,4 @@
+import logging
 import tempfile
 import threading
 import unittest
@@ -56,14 +57,20 @@ class FakeTracker:
         self.candidates = candidates or []
         self.states = states or []
         self.terminal = terminal or []
+        self.candidate_fetches = 0
+        self.state_fetches = 0
+        self.terminal_fetches = 0
 
     def fetch_candidate_issues(self):
+        self.candidate_fetches += 1
         return list(self.candidates)
 
     def fetch_issues_by_states(self, state_names):
+        self.terminal_fetches += 1
         return list(self.terminal)
 
     def fetch_issue_states_by_ids(self, issue_ids):
+        self.state_fetches += 1
         return list(self.states)
 
 
@@ -210,6 +217,57 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
             orchestrator.process_due_retries()
             self.assertEqual(len(runner.prompts), 1)
+
+    def test_tick_preflight_failure_reconciles_running_but_skips_candidate_dispatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(**{**config(root).__dict__, "tracker_project_slug": None})
+            done = issue("ABC-18", state="Done")
+            tracker = FakeTracker(candidates=[issue("ABC-19")], states=[done])
+            runner = FakeRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+            workspace = orchestrator.workspace_manager.create_for_issue(done.identifier)
+            orchestrator.state.running[done.id] = RunningEntry(issue=issue("ABC-18", state="In Progress"), started_at=datetime.now(timezone.utc), workspace_path=workspace.path)
+
+            orchestrator.tick_once()
+
+            self.assertEqual(tracker.state_fetches, 1)
+            self.assertEqual(tracker.candidate_fetches, 0)
+            self.assertFalse(workspace.path.exists())
+            self.assertEqual(runner.prompts, [])
+
+    def test_tick_preflight_failure_leaves_due_retry_queued(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = RuntimeConfig(**{**config(root).__dict__, "tracker_project_slug": None})
+            candidate = issue("ABC-20")
+            tracker = FakeTracker(candidates=[candidate])
+            runner = FakeRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+            orchestrator.schedule_retry(candidate, attempt=1, error="temporary")
+            orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
+
+            orchestrator.tick_once()
+
+            self.assertEqual(tracker.candidate_fetches, 0)
+            self.assertEqual(runner.prompts, [])
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_tick_preflight_failure_logs_without_secret(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            secret = "super-secret-token"
+            cfg = RuntimeConfig(**{**config(root).__dict__, "tracker_api_key": secret, "tracker_project_slug": None})
+            logger = logging.getLogger("harness.runtime.test.preflight")
+            orchestrator = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg, logger=logger), FakeRunner(), "Work", executor=InlineExecutor(), logger=logger)
+
+            with self.assertLogs(logger, level="ERROR") as captured:
+                orchestrator.tick_once()
+
+            output = "\n".join(captured.output)
+            self.assertIn("event=dispatch_preflight_failed", output)
+            self.assertIn("tracker.project_slug is required for Linear", output)
+            self.assertNotIn(secret, output)
 
     def test_apply_reload_updates_runtime_config_and_prompt(self):
         with tempfile.TemporaryDirectory() as directory:
