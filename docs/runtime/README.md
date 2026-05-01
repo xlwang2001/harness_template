@@ -21,6 +21,23 @@ When the runtime uses the Linear tracker, it registers the optional `linear_grap
 
 The optional status API is disabled by default. Enable it with `server.enabled: true`; it binds to `server.host` (default `127.0.0.1`) and `server.port` (default `8765`). It serves `/`, `GET /api/v1/state`, `GET /api/v1/<issue_identifier>`, and `POST /api/v1/refresh`. Listener changes require a runtime restart.
 
+## Real Integration Profile
+
+The real integration profile is opt-in production-readiness smoke coverage. Normal CI and `make test` discover the tests but skip them unless `HARNESS_RUN_INTEGRATION=1` is set.
+
+Run it with:
+
+```sh
+HARNESS_RUN_INTEGRATION=1 \
+LINEAR_API_KEY=... \
+LINEAR_PROJECT_SLUG=... \
+make integration-test
+```
+
+The Linear smoke test builds a temporary `WORKFLOW.md`, resolves the same runtime config path as production, validates dispatch config, and performs a read-only candidate fetch for the configured project. It does not require issues to exist and does not mutate Linear state.
+
+Set `HARNESS_INTEGRATION_CODEX_COMMAND` to run the Codex app-server smoke against a real command, for example `codex app-server`. That check creates an isolated temporary workspace and runs one minimal turn through `CodexAgentRunner`; protocol, launch, or authentication failures fail only this explicitly enabled profile. `HARNESS_INTEGRATION_WORKSPACE_ROOT` can point the temporary workspaces at a specific local root; otherwise the system temp directory is used. Temporary workspaces are removed by the test harness when the process exits normally.
+
 ## Workflow Front Matter Subset
 
 The standard-library parser intentionally supports a documented YAML subset: nested maps by indentation, lists with `- ` items, quoted or unquoted scalars, integers, booleans, null values, comments, blank lines, and `|` block scalars. Unsupported YAML features should fail parsing instead of being guessed. This subset covers scaffold `WORKFLOW.md` templates while keeping dependency policy explicit.

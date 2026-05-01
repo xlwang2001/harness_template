@@ -59,7 +59,7 @@
 - [x] Add tests for `linear_graphql` valid queries, invalid inputs, multiple operations, missing auth, GraphQL errors, and transport failures.
 - [x] Add optional HTTP status API for `/api/v1/state`, issue detail, and refresh.
 - [x] Add dashboard/API tests for JSON error envelopes, unsupported methods, and refresh coalescing.
-- [ ] Add real integration test profile gated by explicit environment variables.
+- [x] Add real integration test profile gated by explicit environment variables.
 - [ ] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 - [ ] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.
 - [ ] Add release notes and compatibility policy for generated target repos.
