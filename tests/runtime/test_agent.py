@@ -96,6 +96,17 @@ for line in sys.stdin:
             send({"event": "turn_cancelled"})
         elif mode == "input_required":
             send({"event": "turn_input_required"})
+        elif mode == "approval_tools":
+            send({"event": "command_approval_requested", "id": "approval-1", "command": "pytest"})
+            approval = json.loads(sys.stdin.readline())
+            record(approval)
+            send({"event": "client_tool_call", "tool_call_id": "tool-unsupported", "tool_name": "missing_tool", "arguments": {"value": 1}})
+            unsupported = json.loads(sys.stdin.readline())
+            record(unsupported)
+            send({"event": "client_tool_call", "tool_call_id": "tool-supported", "tool_name": "echo", "arguments": {"value": 2}})
+            supported = json.loads(sys.stdin.readline())
+            record(supported)
+            send({"event": "turn_completed"})
         elif mode == "turn_timeout":
             time.sleep(2)
         elif mode == "exit_during_turn":
@@ -106,7 +117,7 @@ for line in sys.stdin:
 
 
 class CodexAgentRunnerTests(unittest.TestCase):
-    def build_runner(self, root: Path, mode: str, *, read_timeout_ms: int = 1000, turn_timeout_ms: int = 1000):
+    def build_runner(self, root: Path, mode: str, *, read_timeout_ms: int = 1000, turn_timeout_ms: int = 1000, client_tools=None):
         server = root / "fake_codex_server.py"
         record = root / "record.json"
         server.write_text(textwrap.dedent(FAKE_SERVER), encoding="utf-8")
@@ -121,7 +132,7 @@ class CodexAgentRunnerTests(unittest.TestCase):
             ]
         )
         cfg = config(root, command=command, read_timeout_ms=read_timeout_ms, turn_timeout_ms=turn_timeout_ms)
-        return CodexAgentRunner(cfg), workspace, record
+        return CodexAgentRunner(cfg, client_tools=client_tools), workspace, record
 
     def test_protocol_success_launches_in_workspace_and_streams_events(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -163,6 +174,35 @@ class CodexAgentRunnerTests(unittest.TestCase):
             runner, workspace, _ = self.build_runner(Path(directory), "input_required")
             with self.assertRaisesRegex(AgentRunnerError, "turn_input_required"):
                 runner.run_turn(issue(), "Do the work", workspace)
+
+    def test_protocol_auto_approves_and_handles_supported_and_unsupported_tool_calls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner, workspace, record = self.build_runner(
+                root,
+                "approval_tools",
+                client_tools={"echo": lambda arguments: {"echoed": arguments}},
+            )
+            events = []
+
+            runner.run_turn(issue(), "Do the work", workspace, on_event=events.append)
+
+            names = [event["event"] for event in events]
+            self.assertIn("approval_auto_approved", names)
+            self.assertIn("unsupported_tool_call", names)
+            self.assertIn("client_tool_completed", names)
+            records = json.loads(record.read_text(encoding="utf-8"))
+            self.assertEqual(records[0]["params"]["client_tools"], [{"name": "echo"}])
+            approval_response = next(message for message in records if message.get("method") == "approval/respond")
+            self.assertEqual(approval_response["params"]["approval_id"], "approval-1")
+            self.assertTrue(approval_response["params"]["approved"])
+            tool_results = [message for message in records if message.get("method") == "tool/result"]
+            self.assertEqual(tool_results[0]["params"]["tool_call_id"], "tool-unsupported")
+            self.assertFalse(tool_results[0]["params"]["success"])
+            self.assertEqual(tool_results[0]["params"]["output"], {"error": "unsupported_tool_call"})
+            self.assertEqual(tool_results[1]["params"]["tool_call_id"], "tool-supported")
+            self.assertTrue(tool_results[1]["params"]["success"])
+            self.assertEqual(tool_results[1]["params"]["output"], {"echoed": {"value": 2}})
 
     def test_protocol_read_timeout_maps_to_response_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

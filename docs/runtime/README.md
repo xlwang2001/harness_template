@@ -15,7 +15,7 @@ This runtime follows the upstream [Symphony service specification](https://githu
 
 The runtime has a hardened orchestration boundary and conformance tests, and `CodexAgentRunner` now owns app-server launch, session/thread/turn startup, event streaming, timeout handling, and terminal error mapping. `SPEC.md` intentionally defers exact protocol envelopes to the targeted Codex app-server version, so production use should verify the adapter against the generated schema for the installed Codex version and run real tracker smoke tests before unattended operation.
 
-User-input-required events fail the current run immediately as `turn_input_required`; the orchestrator then applies the normal retry policy. This keeps runs from waiting indefinitely for operator input.
+User-input-required events fail the current run immediately as `turn_input_required`; the orchestrator then applies the normal retry policy. Command and file-change approval requests are auto-approved according to the documented high-trust runtime posture. Registered client-side tools are handled by explicit runtime handlers, while unsupported tool calls return structured failures and allow the session to continue. These policies keep runs from waiting indefinitely for operator input or unsupported tool execution.
 
 ## Workflow Front Matter Subset
 

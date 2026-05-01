@@ -13,6 +13,8 @@ Agent runs may read and edit repository files, run shell commands inside workspa
 - Do not mount production credentials into agent workspaces.
 - Require human review before merge until the project has strong quality gates.
 - Treat Codex app-server user-input-required events as run failures; the runtime must not wait indefinitely for operator input inside an agent session.
+- Auto-approve command and file-change approval requests only in environments where the workspace, credentials, and branch protections are deliberately trusted.
+- Reject unsupported client-side tool calls with structured failures instead of letting sessions wait for unavailable tools.
 
 ## Incident Response
 

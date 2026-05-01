@@ -29,6 +29,7 @@ class AgentRunResult:
 
 
 AgentEventCallback = Callable[[dict[str, Any]], None]
+ClientToolHandler = Callable[[Any], Any]
 
 
 class CodexAgentRunner:
@@ -39,8 +40,9 @@ class CodexAgentRunner:
     orchestrator owns policy while protocol envelopes can evolve in one place.
     """
 
-    def __init__(self, config: RuntimeConfig):
+    def __init__(self, config: RuntimeConfig, client_tools: Mapping[str, ClientToolHandler] | None = None):
         self.config = config
+        self.client_tools = dict(client_tools or {})
 
     def run_turn(
         self,
@@ -80,6 +82,7 @@ class CodexAgentRunner:
         client = _JsonLineAppServerClient(
             process,
             config=self.config,
+            client_tools=self.client_tools,
             read_timeout_ms=self.config.codex_read_timeout_ms,
             turn_timeout_ms=self.config.codex_turn_timeout_ms,
             emit=emit,
@@ -110,12 +113,14 @@ class _JsonLineAppServerClient:
         process: subprocess.Popen[str],
         *,
         config: RuntimeConfig,
+        client_tools: Mapping[str, ClientToolHandler],
         read_timeout_ms: int,
         turn_timeout_ms: int,
         emit: AgentEventCallback,
     ):
         self.process = process
         self.config = config
+        self.client_tools = dict(client_tools)
         self.read_timeout_ms = read_timeout_ms
         self.turn_timeout_ms = turn_timeout_ms
         self.emit = emit
@@ -133,6 +138,7 @@ class _JsonLineAppServerClient:
                 "approval_policy": self.config.approval_policy,
                 "thread_sandbox": self.config.thread_sandbox,
                 "turn_sandbox_policy": self.config.turn_sandbox_policy,
+                "client_tools": [{"name": name} for name in sorted(self.client_tools)],
             },
             timeout_ms=self.read_timeout_ms,
         )
@@ -182,6 +188,8 @@ class _JsonLineAppServerClient:
                 continue
             event.setdefault("turn_id", turn_id)
             self.emit(event)
+            if self.handle_policy_event(event):
+                continue
             name = str(event.get("event") or "")
             if name == "turn_completed":
                 return
@@ -195,6 +203,46 @@ class _JsonLineAppServerClient:
                 raise AgentRunnerError("turn_failed")
             if name == "startup_failed":
                 raise AgentRunnerError("response_error")
+
+    def handle_policy_event(self, event: Mapping[str, Any]) -> bool:
+        name = str(event.get("event") or "")
+        if name in {"approval_requested", "command_approval_requested", "file_change_approval_requested"}:
+            self.respond_to_approval(event)
+            self.emit({"event": "approval_auto_approved", "approval_id": _event_identifier(event), "message": "approved by runtime policy"})
+            return True
+        if name in {"tool_call", "client_tool_call"}:
+            self.respond_to_tool_call(event)
+            return True
+        return False
+
+    def respond_to_approval(self, event: Mapping[str, Any]) -> None:
+        self.write_message(
+            {
+                "jsonrpc": "2.0",
+                "method": "approval/respond",
+                "params": {
+                    "approval_id": _event_identifier(event),
+                    "approved": True,
+                    "reason": "auto-approved by runtime policy",
+                },
+            }
+        )
+
+    def respond_to_tool_call(self, event: Mapping[str, Any]) -> None:
+        tool_name = _tool_name(event)
+        call_id = _event_identifier(event)
+        if tool_name not in self.client_tools:
+            self.write_message(_tool_result(call_id, tool_name, False, {"error": "unsupported_tool_call"}))
+            self.emit({"event": "unsupported_tool_call", "tool_name": tool_name, "tool_call_id": call_id})
+            return
+        try:
+            result = self.client_tools[tool_name](_tool_arguments(event))
+        except Exception as exc:
+            self.write_message(_tool_result(call_id, tool_name, False, {"error": str(exc)}))
+            self.emit({"event": "client_tool_failed", "tool_name": tool_name, "tool_call_id": call_id, "message": str(exc)})
+            return
+        self.write_message(_tool_result(call_id, tool_name, True, result))
+        self.emit({"event": "client_tool_completed", "tool_name": tool_name, "tool_call_id": call_id})
 
     def request(self, method: str, params: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
         request_id = self._next_id
@@ -304,3 +352,56 @@ def _extract_identifier(result: Mapping[str, Any], keys: tuple[str, ...], *, nes
                 if identifier:
                     return str(identifier)
     raise AgentRunnerError("response_error")
+
+
+def _event_identifier(event: Mapping[str, Any]) -> str | None:
+    for key in ("id", "approval_id", "approvalId", "tool_call_id", "toolCallId", "call_id", "callId"):
+        value = event.get(key)
+        if value:
+            return str(value)
+    payload = event.get("payload")
+    if isinstance(payload, Mapping):
+        for key in ("id", "approval_id", "approvalId", "tool_call_id", "toolCallId", "call_id", "callId"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+    return None
+
+
+def _tool_name(event: Mapping[str, Any]) -> str | None:
+    for key in ("tool_name", "toolName", "name"):
+        value = event.get(key)
+        if value:
+            return str(value)
+    payload = event.get("payload")
+    if isinstance(payload, Mapping):
+        for key in ("tool_name", "toolName", "name"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+    return None
+
+
+def _tool_arguments(event: Mapping[str, Any]) -> Any:
+    for key in ("arguments", "args", "input"):
+        if key in event:
+            return event[key]
+    payload = event.get("payload")
+    if isinstance(payload, Mapping):
+        for key in ("arguments", "args", "input"):
+            if key in payload:
+                return payload[key]
+    return {}
+
+
+def _tool_result(call_id: str | None, tool_name: str | None, success: bool, output: Any) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "method": "tool/result",
+        "params": {
+            "tool_call_id": call_id,
+            "tool_name": tool_name,
+            "success": success,
+            "output": output,
+        },
+    }
