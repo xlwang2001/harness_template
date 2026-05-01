@@ -49,7 +49,7 @@
 - [x] Add snapshot tests for running rows, retry rows, aggregate token totals, runtime seconds, and rate limits.
 - [x] Add per-tick dispatch preflight validation that keeps reconciliation active when dispatch config is invalid.
 - [x] Align `after_run` hook execution with SPEC so it runs after success, failure, timeout, or cancellation once a workspace exists.
-- [ ] Add run-attempt lifecycle reason tests for succeeded, failed, timed out, stalled, and canceled-by-reconciliation outcomes.
+- [x] Add run-attempt lifecycle reason tests for succeeded, failed, timed out, stalled, and canceled-by-reconciliation outcomes.
 - [ ] Implement token and rate-limit aggregation from Codex app-server events.
 - [ ] Implement a real Codex app-server protocol client behind `CodexAgentRunner`.
 - [ ] Add Codex protocol tests for startup handshake, thread creation, turn streaming, completion, failure, cancellation, timeout, and subprocess exit.

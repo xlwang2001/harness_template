@@ -10,7 +10,7 @@ from threading import RLock
 from typing import Protocol
 
 from .agent import AgentRunnerError, CodexAgentRunner
-from .models import Issue, RetryEntry, RunningEntry, RuntimeConfig, RuntimeState
+from .models import Issue, RetryEntry, RunAttemptRecord, RunningEntry, RuntimeConfig, RuntimeState
 from .prompt import render_prompt
 from .runtime_logging import emit_runtime_log
 from .tracker import IssueTrackerClient, TrackerError
@@ -134,7 +134,7 @@ class Orchestrator:
                 )
                 return
             self.state.claimed.add(issue.id)
-            self.state.running[issue.id] = RunningEntry(issue=issue, started_at=datetime.now(timezone.utc))
+            self.state.running[issue.id] = RunningEntry(issue=issue, started_at=datetime.now(timezone.utc), attempt=attempt)
             emit_runtime_log(
                 self.logger,
                 "dispatch_started",
@@ -212,6 +212,7 @@ class Orchestrator:
                 return
             self.state.worker_futures.pop(issue_id, None)
             if normal:
+                self._record_attempt_locked(entry, status="succeeded", error=None)
                 self.state.completed.add(issue_id)
                 emit_runtime_log(
                     self.logger,
@@ -222,6 +223,7 @@ class Orchestrator:
                 )
                 self.schedule_retry(entry.issue, attempt=1, error=None, continuation=True)
             else:
+                self._record_attempt_locked(entry, status=self._attempt_status_for_error(error), error=error)
                 emit_runtime_log(
                     self.logger,
                     "worker_failed",
@@ -232,6 +234,26 @@ class Orchestrator:
                     secrets=(self.config.tracker_api_key,),
                 )
                 self.schedule_retry(entry.issue, attempt=1, error=error, continuation=False)
+
+    def _record_attempt_locked(self, entry: RunningEntry, *, status: str, error: str | None) -> None:
+        self.state.last_attempts[entry.issue.id] = RunAttemptRecord(
+            issue_id=entry.issue.id,
+            identifier=entry.issue.identifier,
+            attempt=entry.attempt,
+            workspace_path=entry.workspace_path,
+            started_at=entry.started_at,
+            finished_at=datetime.now(timezone.utc),
+            status=status,
+            error=error,
+        )
+
+    @staticmethod
+    def _attempt_status_for_error(error: str | None) -> str:
+        if error == "turn_timeout":
+            return "timed_out"
+        if error == "stalled":
+            return "stalled"
+        return "failed"
 
     def schedule_retry(self, issue: Issue, *, attempt: int, error: str | None, continuation: bool = False) -> None:
         delay = 1000 if continuation else min(10000 * (2 ** max(attempt - 1, 0)), self.config.max_retry_backoff_ms)
@@ -322,6 +344,8 @@ class Orchestrator:
             entry = self.state.running.pop(issue.id, None)
             future = self.state.worker_futures.pop(issue.id, None)
             self.state.claimed.discard(issue.id)
+            if entry:
+                self._record_attempt_locked(entry, status="canceled_by_reconciliation", error=None)
         if not entry:
             return
         cancel_requested = future.cancel() if future and not future.done() else False

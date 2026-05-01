@@ -94,6 +94,12 @@ class FailingRunner(FakeRunner):
         raise AgentRunnerError("agent failed")
 
 
+class TimeoutRunner(FakeRunner):
+    def run_turn(self, issue, prompt, workspace_path, attempt=None):
+        super().run_turn(issue, prompt, workspace_path, attempt)
+        raise AgentRunnerError("turn_timeout")
+
+
 class BlockingRunner:
     def __init__(self):
         self.started = threading.Event()
@@ -162,6 +168,53 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual(len(runner.prompts), 1)
             self.assertIn(candidate.id, orchestrator.state.retry_attempts)
 
+    def test_successful_worker_records_succeeded_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-25", state="Todo")
+            orchestrator, _ = self.build(root, FakeTracker(candidates=[candidate]))
+
+            orchestrator.tick_once()
+
+            record = orchestrator.state.last_attempts[candidate.id]
+            self.assertEqual(record.issue_id, candidate.id)
+            self.assertEqual(record.identifier, "ABC-25")
+            self.assertIsNone(record.attempt)
+            self.assertEqual(record.workspace_path, root / "ABC-25")
+            self.assertEqual(record.status, "succeeded")
+            self.assertIsNone(record.error)
+            self.assertLessEqual(record.started_at, record.finished_at)
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_failed_worker_records_failed_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-26", state="Todo")
+            cfg = config(root)
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), FailingRunner(), "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            record = orchestrator.state.last_attempts[candidate.id]
+            self.assertEqual(record.status, "failed")
+            self.assertEqual(record.error, "agent failed")
+            self.assertEqual(record.workspace_path, root / "ABC-26")
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_turn_timeout_worker_records_timed_out_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-27", state="Todo")
+            cfg = config(root)
+            orchestrator = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), TimeoutRunner(), "Work", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            record = orchestrator.state.last_attempts[candidate.id]
+            self.assertEqual(record.status, "timed_out")
+            self.assertEqual(record.error, "turn_timeout")
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
     def test_reconcile_terminal_cleans_workspace(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -171,6 +224,7 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.state.running[done.id] = RunningEntry(issue=issue("ABC-2", state="In Progress"), started_at=datetime.now(timezone.utc), workspace_path=workspace.path)
             orchestrator.reconcile_running()
             self.assertFalse(workspace.path.exists())
+            self.assertEqual(orchestrator.state.last_attempts[done.id].status, "canceled_by_reconciliation")
 
     def test_reconcile_terminal_cancels_pending_future_and_does_not_retry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -196,6 +250,9 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.state.running[stale.id] = RunningEntry(issue=stale, started_at=datetime.now(timezone.utc) - timedelta(seconds=5))
             orchestrator.reconcile_stalled()
             self.assertIn(stale.id, orchestrator.state.retry_attempts)
+            record = orchestrator.state.last_attempts[stale.id]
+            self.assertEqual(record.status, "stalled")
+            self.assertEqual(record.error, "stalled")
 
     def test_dispatch_is_non_blocking_and_preserves_running_slot(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -467,6 +524,9 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(workspace.path.exists())
             self.assertNotIn(paused.id, orchestrator.state.running)
             self.assertNotIn(paused.id, orchestrator.state.claimed)
+            self.assertEqual(orchestrator.state.last_attempts[paused.id].status, "canceled_by_reconciliation")
+            self.assertIsNone(orchestrator.state.last_attempts[paused.id].error)
+            self.assertNotIn(paused.id, orchestrator.state.retry_attempts)
 
     def test_reconcile_non_active_cancels_pending_future_without_cleanup_or_retry(self):
         with tempfile.TemporaryDirectory() as directory:

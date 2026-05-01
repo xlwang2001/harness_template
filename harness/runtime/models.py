@@ -112,6 +112,7 @@ class Workspace:
 class RunningEntry:
     issue: Issue
     started_at: datetime
+    attempt: int | None = None
     workspace_path: Path | None = None
     session_id: str | None = None
     thread_id: str | None = None
@@ -139,6 +140,18 @@ class RetryEntry:
 
 
 @dataclass
+class RunAttemptRecord:
+    issue_id: str
+    identifier: str
+    attempt: int | None
+    workspace_path: Path | None
+    started_at: datetime
+    finished_at: datetime
+    status: str
+    error: str | None = None
+
+
+@dataclass
 class RuntimeState:
     poll_interval_ms: int
     max_concurrent_agents: int
@@ -146,6 +159,7 @@ class RuntimeState:
     worker_futures: dict[str, Any] = field(default_factory=dict)
     claimed: set[str] = field(default_factory=set)
     retry_attempts: dict[str, RetryEntry] = field(default_factory=dict)
+    last_attempts: dict[str, RunAttemptRecord] = field(default_factory=dict)
     completed: set[str] = field(default_factory=set)
     codex_totals: dict[str, float] = field(
         default_factory=lambda: {
