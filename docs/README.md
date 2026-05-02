@@ -22,6 +22,7 @@ This repo implements a hardened runtime compatible with the upstream Symphony se
 - Template upgrade policy: `docs/template-upgrade-policy.md`
 - Release and compatibility policy: `docs/release-compatibility-policy.md`
 - Runtime operator runbooks: `docs/runtime/runbooks.md`
+- Runtime support matrix: `docs/runtime/support-matrix.md`
 - Runtime production readiness checklist: `docs/runtime/production-readiness-checklist.md`
 - Release history: `CHANGELOG.md`
 

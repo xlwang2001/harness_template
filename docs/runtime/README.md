@@ -52,6 +52,8 @@ Set `HARNESS_INTEGRATION_CODEX_COMMAND` to run the Codex app-server smoke agains
 
 Runtime operator procedures live in `docs/runtime/runbooks.md`. They cover workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 
+Current support boundaries live in `docs/runtime/support-matrix.md`.
+
 Use `docs/runtime/production-readiness-checklist.md` before first production use and whenever Codex app-server, Linear configuration, workflow dispatch policy, or runtime templates change.
 
 ## Workflow Front Matter Subset

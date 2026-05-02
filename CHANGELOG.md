@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1
+
+Runtime support matrix release.
+
+### Added
+
+- Added `docs/runtime/support-matrix.md` so adopters can quickly distinguish supported, unsupported, deferred, schema-blocked, and verification-required runtime capabilities.
+- Linked the support matrix from README, adoption, runtime, and production-readiness docs.
+
+### Verification
+
+- No runtime behavior changed in this patch release.
+
 ## 1.0.0
 
 Initial Linear-first hardened runtime release.

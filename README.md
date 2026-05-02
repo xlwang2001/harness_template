@@ -39,6 +39,8 @@ Start with `docs/README.md`.
 
 Runtime compatibility is tracked against the upstream [Symphony service specification](https://github.com/openai/symphony/blob/main/SPEC.md). Upstream implementation code is reference material only.
 
+Runtime support boundaries are summarized in `docs/runtime/support-matrix.md`.
+
 Release history lives in `CHANGELOG.md`.
 
 The 1.0 runtime is a Linear-first hardened scaffold: orchestration boundaries, validation, retries, workspace safety, Linear integration, observability, durable runtime state, and the Codex app-server runner boundary are covered by tests. The exact app-server envelopes remain isolated behind `CodexAgentRunner` and should be verified against the generated schema for the installed Codex version before unattended production use.

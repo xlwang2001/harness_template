@@ -14,6 +14,8 @@ python -m harness.cli init --target /path/to/your/repo --profile cautious-linear
 
 Inspect the generated files before committing them.
 
+Before first live runtime use, review `docs/runtime/support-matrix.md` so the current Linear-first support boundary is clear.
+
 ## Fill Project-Specific Guidance
 
 Edit `AGENTS.md`, `WORKFLOW.md`, `ARCHITECTURE.md`, and the docs under `docs/`. Keep `AGENTS.md` short and put durable knowledge in the deeper docs.

@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.0.1",
+            "Runtime support matrix release",
             "## 1.0.0",
             "Linear-first hardened runtime release",
             "`linear_graphql` startup advertisement is schema-blocked",
@@ -109,8 +111,37 @@ class RuntimeDocsTests(unittest.TestCase):
     def test_package_version_is_1_0_0(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.0.0")
-        self.assertEqual(harness.__version__, "1.0.0")
+        self.assertEqual(pyproject["project"]["version"], "1.0.1")
+        self.assertEqual(harness.__version__, "1.0.1")
+
+    def test_runtime_support_matrix_exists_and_is_linked(self):
+        root = Path(__file__).resolve().parent.parent
+        matrix = root / "docs" / "runtime" / "support-matrix.md"
+        self.assertTrue(matrix.is_file())
+        text = matrix.read_text(encoding="utf-8")
+        for expected in (
+            "Linear tracker | Supported",
+            "GitHub Issues tracker | Not supported",
+            "`linear_graphql` startup advertisement | Schema-blocked",
+            "Auto-merge | Not supported by default",
+            "Durable local runtime state | Supported",
+        ):
+            self.assertIn(expected, text)
+        for doc in (
+            root / "README.md",
+            root / "docs" / "README.md",
+            root / "docs" / "adoption-guide.md",
+            root / "docs" / "runtime" / "README.md",
+            root / "docs" / "runtime" / "production-readiness-checklist.md",
+        ):
+            self.assertIn("docs/runtime/support-matrix.md", doc.read_text(encoding="utf-8"))
+
+    def test_optimization_backlog_tracks_support_matrix_completion(self):
+        root = Path(__file__).resolve().parent.parent
+        todo = (root / "docs" / "runtime" / "spec-conformance-todo.md").read_text(encoding="utf-8")
+        self.assertIn("## Optimization Backlog", todo)
+        self.assertIn("- [x] Priority 1: Add a human-facing runtime support matrix", todo)
+        self.assertIn("- [ ] Priority 2: Add a read-only dispatch preview command", todo)
 
     def test_readme_describes_1_0_status_not_early_stage(self):
         root = Path(__file__).resolve().parent.parent

@@ -2,6 +2,8 @@
 
 Use this checklist before running the hardened runtime against a production project, and repeat the relevant parts whenever `SPEC.md`, Codex app-server, Linear behavior, workflow config, or runtime templates change.
 
+Review `docs/runtime/support-matrix.md` first so unsupported, deferred, schema-blocked, and verification-required capabilities are explicit.
+
 ## Required Before First Production Use
 
 1. Run the default local checks:
