@@ -34,7 +34,9 @@ LINEAR_PROJECT_SLUG=... \
 make integration-test
 ```
 
-The Linear smoke test builds a temporary `WORKFLOW.md`, resolves the same runtime config path as production, validates dispatch config, and performs a read-only candidate fetch for the configured project. It does not require issues to exist and does not mutate Linear state.
+The profile includes an in-process service-loop smoke that uses runtime fakes for the tracker and runner so it can exercise startup cleanup, one dispatch tick, preserved workspace reuse, shutdown, and restart-empty-state behavior without touching external services. This protects the production-facing orchestration path while keeping the external integration gates explicit.
+
+The Linear smoke tests build a temporary `WORKFLOW.md`, resolve the same runtime config path as production, validate dispatch config, and perform read-only candidate and terminal-state fetches for the configured project. They do not require issues to exist and do not mutate Linear state.
 
 Set `HARNESS_INTEGRATION_CODEX_COMMAND` to run the Codex app-server smoke against a real command, for example `codex app-server`. That check creates an isolated temporary workspace and runs one minimal turn through `CodexAgentRunner`; protocol, launch, or authentication failures fail only this explicitly enabled profile. `HARNESS_INTEGRATION_WORKSPACE_ROOT` can point the temporary workspaces at a specific local root; otherwise the system temp directory is used. Temporary workspaces are removed by the test harness when the process exits normally.
 

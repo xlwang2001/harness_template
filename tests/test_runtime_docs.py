@@ -65,8 +65,15 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("does not provide automatic in-place template upgrades", plan)
         self.assertNotIn("through `harness upgrade`, not silently", plan)
 
-    def test_conformance_todo_is_complete(self):
+    def test_conformance_todo_tracks_prioritized_remaining_hardening(self):
         root = Path(__file__).resolve().parent.parent
         todo = root / "docs" / "runtime" / "spec-conformance-todo.md"
         text = todo.read_text(encoding="utf-8")
-        self.assertNotIn("- [ ]", text)
+        self.assertIn("## Prioritized Remaining Hardening", text)
+        self.assertIn("- [x] P0: Expand the gated real integration profile", text)
+        for item in (
+            "- [ ] P1: Add a production-readiness checklist",
+            "- [ ] P2: Add configurable runtime log sinks",
+            "- [ ] P3: Revisit `linear_graphql` startup advertisement",
+        ):
+            self.assertIn(item, text)
