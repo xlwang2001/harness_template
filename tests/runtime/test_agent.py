@@ -261,7 +261,28 @@ class CodexAgentRunnerTests(unittest.TestCase):
             self.assertTrue(tool_results[1]["result"]["success"])
             self.assertEqual(json.loads(tool_results[1]["result"]["contentItems"][0]["text"]), {"echoed": {"value": 2}})
 
-    def test_protocol_advertises_and_returns_successful_linear_graphql_result(self):
+    def test_protocol_does_not_send_non_schema_tool_advertisement_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner, workspace, record = self.build_runner(
+                root,
+                "linear_graphql",
+                client_tools={"linear_graphql": lambda arguments: ClientToolResult(True, {"data": {"ok": True}})},
+            )
+
+            runner.run_turn(issue(), "Do the work", workspace)
+
+            records = json.loads(record.read_text(encoding="utf-8"))
+            startup = [message for message in records if message.get("method") in {"initialize", "thread/start", "turn/start"}]
+            self.assertTrue(startup)
+            for message in startup:
+                params = message.get("params", {})
+                self.assertNotIn("client_tools", params)
+                self.assertNotIn("clientTools", params)
+                self.assertNotIn("tools", params)
+                self.assertNotIn("dynamicTools", params)
+
+    def test_protocol_returns_successful_linear_graphql_result_when_requested(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runner, workspace, record = self.build_runner(

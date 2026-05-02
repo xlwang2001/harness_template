@@ -45,6 +45,28 @@ def _load_validator(testcase: unittest.TestCase, schema_path: Path):
     return jsonschema.Draft7Validator(schema)
 
 
+def _load_schema(testcase: unittest.TestCase, schema_path: Path) -> dict:
+    try:
+        return json.loads(schema_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        testcase.skipTest(f"schema file not available: {exc}")
+
+
+def _schema_supports_startup_tool_advertisement(schema: object) -> bool:
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            lowered = str(key).lower()
+            if lowered in {"clienttools", "client_tools", "dynamictools", "dynamic_tools"}:
+                return True
+            if lowered == "tools":
+                return True
+            if _schema_supports_startup_tool_advertisement(value):
+                return True
+    elif isinstance(schema, list):
+        return any(_schema_supports_startup_tool_advertisement(item) for item in schema)
+    return False
+
+
 def _assert_valid(testcase: unittest.TestCase, validator, payload: object) -> None:
     errors = sorted(validator.iter_errors(payload), key=lambda error: list(error.path))
     if errors:
@@ -52,6 +74,16 @@ def _assert_valid(testcase: unittest.TestCase, validator, payload: object) -> No
 
 
 class CodexSchemaTests(unittest.TestCase):
+    def test_generated_schema_does_not_expose_startup_tool_advertisement_field_yet(self):
+        schema_dir = _schema_dir(self)
+        client_request_schema = _load_schema(self, schema_dir / "ClientRequest.json")
+        if _schema_supports_startup_tool_advertisement(client_request_schema):
+            self.fail(
+                "Generated Codex schema appears to expose a startup tool advertisement field; "
+                "implement schema-backed linear_graphql advertisement deliberately instead of "
+                "leaving it schema-blocked."
+            )
+
     def test_runner_envelopes_match_generated_schema(self):
         schema_dir = _schema_dir(self)
         client_request = _load_validator(self, schema_dir / "ClientRequest.json")

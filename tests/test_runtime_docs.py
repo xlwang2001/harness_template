@@ -94,7 +94,5 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("- [x] P0: Expand the gated real integration profile", text)
         self.assertIn("- [x] P1: Add a production-readiness checklist", text)
         self.assertIn("- [x] P2: Add configurable runtime log sinks", text)
-        for item in (
-            "- [ ] P3: Revisit `linear_graphql` startup advertisement",
-        ):
-            self.assertIn(item, text)
+        self.assertIn("- [x] P3: Revisit `linear_graphql` startup advertisement", text)
+        self.assertNotIn("- [ ] P", text)
