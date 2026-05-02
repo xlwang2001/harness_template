@@ -86,6 +86,6 @@
 ## Future Recommended Extensions
 
 - [x] Persist retry queue and session metadata across process restarts.
-- [ ] Add first-class tracker write APIs for comments, state transitions, or PR metadata when orchestration should own those writes.
+- [x] Add first-class tracker write APIs for comments, state transitions, or PR metadata when orchestration should own those writes.
 - [ ] Add pluggable issue tracker adapters beyond Linear.
 - [ ] Implement schema-backed `linear_graphql` startup advertisement if the targeted generated Codex schema adds a stable client-tool advertisement field.

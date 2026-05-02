@@ -44,6 +44,16 @@ Use this table to choose the first recovery action.
 
 When in doubt, pause dispatch by making active states empty or moving candidate issues out of active states, then inspect logs and workspaces before restarting.
 
+## Tracker Write APIs
+
+Use this when a workflow or operator tool should own a Linear mutation instead of asking the coding agent to update the issue.
+
+1. Prefer read-only scheduler behavior unless there is a concrete workflow reason to write tracker data from runtime-owned code.
+2. Use `add_comment` for explicit operator-visible notes, `transition_issue` for state handoff, and `record_pull_request` for PR metadata attachments.
+3. Keep credentials least-privilege and scoped to the configured Linear project.
+4. Treat write API failures as workflow failures that should be visible to operators; do not hide them behind successful dispatch.
+5. Keep real integration tests read-only unless a separate, explicitly named mutation profile and cleanup procedure is added.
+
 ## Dashboard And API Operation
 
 Use this when observing live state or forcing an immediate poll.

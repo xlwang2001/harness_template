@@ -4,7 +4,7 @@ from urllib.error import HTTPError, URLError
 
 from harness.runtime.client_tools import ClientToolResult, LinearGraphQLTool, build_client_tools
 from harness.runtime.models import RuntimeConfig
-from harness.runtime.tracker import LinearClient, TrackerError, normalize_linear_issue
+from harness.runtime.tracker import IssueTrackerClient, LinearClient, TrackerError, normalize_linear_issue
 
 
 def config(**overrides):
@@ -153,6 +153,122 @@ class TrackerTests(unittest.TestCase):
         with patch("urllib.request.urlopen", side_effect=URLError("down")):
             with self.assertRaisesRegex(TrackerError, "linear_api_request"):
                 client._graphql("query", {})
+
+    def test_default_tracker_write_methods_are_explicitly_unsupported(self):
+        class ReadOnlyTracker(IssueTrackerClient):
+            def fetch_candidate_issues(self):
+                return []
+
+            def fetch_issues_by_states(self, state_names):
+                return []
+
+            def fetch_issue_states_by_ids(self, issue_ids):
+                return []
+
+        tracker = ReadOnlyTracker()
+        with self.assertRaisesRegex(TrackerError, "tracker_write_not_supported"):
+            tracker.add_comment("issue-id", "body")
+        with self.assertRaisesRegex(TrackerError, "tracker_write_not_supported"):
+            tracker.transition_issue("issue-id", "Done")
+        with self.assertRaisesRegex(TrackerError, "tracker_write_not_supported"):
+            tracker.record_pull_request("issue-id", "https://example.com/pr/1")
+
+    def test_linear_add_comment_mutation_returns_write_result(self):
+        client = LinearClient(config())
+        payload = {
+            "data": {
+                "commentCreate": {
+                    "success": True,
+                    "comment": {"id": "comment-id", "url": "https://linear.app/comment-id"},
+                }
+            }
+        }
+        with patch.object(client, "_graphql", return_value=payload) as graphql:
+            result = client.add_comment("issue-id", "Ready for review")
+
+        query, variables = graphql.call_args.args
+        self.assertIn("commentCreate", query)
+        self.assertEqual(variables, {"issueId": "issue-id", "body": "Ready for review"})
+        self.assertTrue(result.success)
+        self.assertEqual(result.id, "comment-id")
+        self.assertEqual(result.url, "https://linear.app/comment-id")
+
+    def test_linear_transition_issue_resolves_state_then_updates_issue(self):
+        client = LinearClient(config())
+        state_payload = {"data": {"workflowStates": {"nodes": [{"id": "state-id", "name": "Human Review"}]}}}
+        update_payload = {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {"id": "issue-id", "identifier": "ABC-1", "url": "https://linear.app/ABC-1", "state": {"name": "Human Review"}},
+                }
+            }
+        }
+        with patch.object(client, "_graphql", side_effect=[state_payload, update_payload]) as graphql:
+            result = client.transition_issue("issue-id", "Human Review")
+
+        state_query, state_variables = graphql.call_args_list[0].args
+        update_query, update_variables = graphql.call_args_list[1].args
+        self.assertIn("workflowStates", state_query)
+        self.assertEqual(state_variables, {"stateName": "Human Review"})
+        self.assertIn("issueUpdate", update_query)
+        self.assertEqual(update_variables, {"issueId": "issue-id", "stateId": "state-id"})
+        self.assertEqual(result.id, "issue-id")
+        self.assertEqual(result.url, "https://linear.app/ABC-1")
+
+    def test_linear_transition_issue_reports_missing_state(self):
+        client = LinearClient(config())
+        payload = {"data": {"workflowStates": {"nodes": []}}}
+        with patch.object(client, "_graphql", return_value=payload):
+            with self.assertRaisesRegex(TrackerError, "linear_state_not_found"):
+                client.transition_issue("issue-id", "Missing")
+
+    def test_linear_record_pull_request_uses_attachment_mutation(self):
+        client = LinearClient(config())
+        payload = {
+            "data": {
+                "attachmentCreate": {
+                    "success": True,
+                    "attachment": {"id": "attachment-id", "title": "PR #1", "url": "https://github.com/org/repo/pull/1"},
+                }
+            }
+        }
+        with patch.object(client, "_graphql", return_value=payload) as graphql:
+            result = client.record_pull_request("issue-id", "https://github.com/org/repo/pull/1", title="PR #1")
+
+        query, variables = graphql.call_args.args
+        self.assertIn("attachmentCreate", query)
+        self.assertEqual(
+            variables,
+            {"issueId": "issue-id", "title": "PR #1", "url": "https://github.com/org/repo/pull/1"},
+        )
+        self.assertEqual(result.id, "attachment-id")
+        self.assertEqual(result.url, "https://github.com/org/repo/pull/1")
+
+    def test_linear_write_methods_validate_required_inputs(self):
+        client = LinearClient(config())
+        cases = [
+            (client.add_comment, ("", "body"), "issue_id_required"),
+            (client.add_comment, ("issue-id", ""), "body_required"),
+            (client.transition_issue, ("issue-id", ""), "state_name_required"),
+            (client.record_pull_request, ("issue-id", ""), "url_required"),
+        ]
+        for method, args, error in cases:
+            with self.subTest(error=error):
+                with self.assertRaisesRegex(TrackerError, error):
+                    method(*args)
+
+    def test_linear_write_methods_map_unknown_payloads(self):
+        client = LinearClient(config())
+        with patch.object(client, "_graphql", return_value={"data": {"commentCreate": None}}):
+            with self.assertRaisesRegex(TrackerError, "linear_unknown_payload"):
+                client.add_comment("issue-id", "body")
+        with patch.object(client, "_graphql", return_value={"data": {"workflowStates": None}}):
+            with self.assertRaisesRegex(TrackerError, "linear_unknown_payload"):
+                client.transition_issue("issue-id", "Done")
+        with patch.object(client, "_graphql", return_value={"data": {"attachmentCreate": None}}):
+            with self.assertRaisesRegex(TrackerError, "linear_unknown_payload"):
+                client.record_pull_request("issue-id", "https://example.com/pr")
 
     def test_build_client_tools_registers_linear_graphql_for_linear_tracker(self):
         self.assertIn("linear_graphql", build_client_tools(config()))

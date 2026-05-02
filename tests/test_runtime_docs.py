@@ -111,11 +111,21 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("## Future Recommended Extensions", text)
         for item in (
             "- [x] Persist retry queue and session metadata",
-            "first-class tracker write APIs",
+            "- [x] Add first-class tracker write APIs",
             "pluggable issue tracker adapters beyond Linear",
             "schema-backed `linear_graphql` startup advertisement",
         ):
             self.assertIn(item, text)
+
+    def test_tracker_write_apis_are_documented_as_explicit(self):
+        root = Path(__file__).resolve().parent.parent
+        runtime_readme = (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8")
+        runbooks = (root / "docs" / "runtime" / "runbooks.md").read_text(encoding="utf-8")
+        for expected in ("add_comment", "transition_issue", "record_pull_request"):
+            self.assertIn(expected, runtime_readme)
+            self.assertIn(expected, runbooks)
+        self.assertIn("orchestrator does not call these by default", runtime_readme)
+        self.assertIn("Keep real integration tests read-only", runbooks)
 
     def test_runtime_state_persistence_is_documented(self):
         root = Path(__file__).resolve().parent.parent
