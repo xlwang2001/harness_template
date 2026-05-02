@@ -80,11 +80,14 @@ class FakeService(RuntimeService):
 class RuntimeServiceTests(unittest.TestCase):
     def run_service(self, service):
         original_basic_config = service_module.logging.basicConfig
+        original_configure_logging = service_module.configure_runtime_logging
         service_module.logging.basicConfig = lambda *args, **kwargs: None
+        service_module.configure_runtime_logging = lambda *args, **kwargs: None
         try:
             return service.run_forever()
         finally:
             service_module.logging.basicConfig = original_basic_config
+            service_module.configure_runtime_logging = original_configure_logging
 
     def test_run_forever_returns_zero_and_shutdown_once_on_keyboard_interrupt(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -259,6 +262,53 @@ class RuntimeServiceTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertTrue(orchestrator.config.server_enabled)
             self.assertEqual(orchestrator.config.server_port, 0)
+
+    def test_reload_reconfigures_runtime_logging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_log = root / "first.log"
+            second_log = root / "second.log"
+            initial = RuntimeConfig(**{**config(root).__dict__, "logging_file": first_log})
+            reloaded = RuntimeConfig(**{**config(root).__dict__, "logging_level": "DEBUG", "logging_console": False, "logging_file": second_log})
+            calls = []
+
+            class OneReload:
+                last_error = None
+
+                def __init__(self):
+                    self.used = False
+
+                def reload_if_changed(self):
+                    if self.used:
+                        return None
+                    self.used = True
+                    return type("Workflow", (), {"prompt_template": "Work"})(), reloaded
+
+            class ReloadOrchestrator(FakeOrchestrator):
+                def apply_reload(self, cfg, prompt_template):
+                    self.config = cfg
+
+                def tick_once(self):
+                    super().tick_once()
+                    raise KeyboardInterrupt()
+
+            original_configure_logging = service_module.configure_runtime_logging
+            try:
+                service_module.configure_runtime_logging = lambda logger, **kwargs: calls.append(kwargs)
+                orchestrator = ReloadOrchestrator(initial)
+                service = FakeService(orchestrator)
+                service.reloader = OneReload()
+                code = service.run_forever()
+            finally:
+                service_module.configure_runtime_logging = original_configure_logging
+
+            self.assertEqual(code, 0)
+            self.assertEqual(calls[0]["level"], "INFO")
+            self.assertIsNone(calls[0]["file_path"])
+            self.assertEqual(calls[1]["file_path"], first_log)
+            self.assertEqual(calls[2]["level"], "DEBUG")
+            self.assertFalse(calls[2]["console"])
+            self.assertEqual(calls[2]["file_path"], second_log)
 
     def test_status_server_start_failure_does_not_crash_runtime(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -93,8 +93,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("## Prioritized Remaining Hardening", text)
         self.assertIn("- [x] P0: Expand the gated real integration profile", text)
         self.assertIn("- [x] P1: Add a production-readiness checklist", text)
+        self.assertIn("- [x] P2: Add configurable runtime log sinks", text)
         for item in (
-            "- [ ] P2: Add configurable runtime log sinks",
             "- [ ] P3: Revisit `linear_graphql` startup advertisement",
         ):
             self.assertIn(item, text)

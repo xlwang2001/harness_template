@@ -192,6 +192,7 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
     hooks = _map(config.get("hooks"))
     agent = _map(config.get("agent"))
     codex = _map(config.get("codex"))
+    logging_config = _map(config.get("logging"))
     raw_server = config.get("server")
     server = _map(raw_server)
     server_port_present = isinstance(raw_server, dict) and "port" in raw_server
@@ -238,6 +239,9 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
         server_enabled=_bool(server.get("enabled"), False) or server_port_present,
         server_host=str(server.get("host") or "127.0.0.1"),
         server_port=_nonnegative_int(server.get("port"), 8765, "server.port"),
+        logging_level=_logging_level(logging_config.get("level")),
+        logging_console=_bool(logging_config.get("console"), True),
+        logging_file=_optional_resolved_path(logging_config.get("file"), workflow.path.parent),
     )
 
 
@@ -363,3 +367,20 @@ def _resolve_path(value: Any, base: Path) -> Path:
     if not expanded.is_absolute():
         expanded = base / expanded
     return expanded.resolve()
+
+
+def _optional_resolved_path(value: Any, base: Path) -> Path | None:
+    if value is None:
+        return None
+    text = _resolve_env_value(value)
+    if not text:
+        return None
+    return _resolve_path(text, base)
+
+
+def _logging_level(value: Any) -> str:
+    level = str(value or "INFO").upper()
+    allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    if level not in allowed:
+        raise ConfigValidationError("logging.level must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    return level

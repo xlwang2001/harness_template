@@ -13,7 +13,7 @@ from types import FrameType
 from .agent import CodexAgentRunner
 from .client_tools import build_client_tools
 from .orchestrator import Orchestrator
-from .runtime_logging import emit_runtime_log
+from .runtime_logging import configure_runtime_logging, emit_runtime_log
 from .status_server import RuntimeStatusServer
 from .tracker import LinearClient
 from .workflow import WorkflowReloader
@@ -45,7 +45,7 @@ class RuntimeService:
         return Orchestrator(config, tracker, workspace_manager, agent_runner, workflow.prompt_template, logger=self.logger)
 
     def run_forever(self) -> int:
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s level=%(levelname)s %(message)s")
+        configure_runtime_logging(self.logger, level="INFO", console=True, file_path=None)
         previous_handlers = self._install_signal_handlers()
         orchestrator: Orchestrator | None = None
         status_server: RuntimeStatusServer | None = None
@@ -55,6 +55,7 @@ class RuntimeService:
             except Exception as exc:
                 emit_runtime_log(self.logger, "startup_failed", level=logging.ERROR, error=exc)
                 raise RuntimeServiceError(f"runtime startup failed: {exc}") from exc
+            self._configure_logging(orchestrator.config)
             orchestrator.startup_terminal_cleanup()
             if orchestrator.config.server_enabled:
                 try:
@@ -100,6 +101,7 @@ class RuntimeService:
                 if reloaded is not None:
                     workflow, config = reloaded
                     config = self._apply_runtime_overrides(config)
+                    self._configure_logging(config)
                     orchestrator.apply_reload(config, workflow.prompt_template)
                     emit_runtime_log(
                         self.logger,
@@ -196,3 +198,12 @@ class RuntimeService:
         if self.server_port_override is None:
             return config
         return replace(config, server_enabled=True, server_port=self.server_port_override)
+
+    def _configure_logging(self, config) -> None:
+        configure_runtime_logging(
+            self.logger,
+            level=config.logging_level,
+            console=config.logging_console,
+            file_path=config.logging_file,
+            secrets=(config.tracker_api_key,),
+        )

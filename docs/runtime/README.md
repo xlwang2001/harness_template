@@ -21,6 +21,8 @@ When the runtime uses the Linear tracker, it can answer the optional `linear_gra
 
 The optional status API is disabled by default. Enable it with `server.port` in `WORKFLOW.md` or with `harness run --port PORT`; the CLI port overrides workflow config. `server.enabled: true` remains accepted as a compatibility shorthand and uses port `8765` when no port is given. The server binds to `server.host` (default `127.0.0.1`) and serves `/`, `GET /api/v1/state`, `GET /api/v1/<issue_identifier>`, and `POST /api/v1/refresh`. Listener changes require a runtime restart.
 
+Runtime logs are structured `key=value` records from the `harness.runtime` logger. Configure sinks in `WORKFLOW.md` with `logging.level` (`DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`), `logging.console` (default `true`), and optional `logging.file`. Relative log file paths resolve from the workflow directory. Valid workflow reloads reconfigure harness-owned log handlers without removing external handlers; file sink failures are logged as `log_sink_failed` warnings and do not stop orchestration.
+
 ## Real Integration Profile
 
 The real integration profile is opt-in production-readiness smoke coverage. Normal CI and `make test` discover the tests but skip them unless `HARNESS_RUN_INTEGRATION=1` is set.

@@ -26,6 +26,8 @@ Use this when startup, dispatch, retry, hook, or Codex behavior is unclear.
 
 The runtime intentionally keeps logs in stable `key=value` phrasing. If a log sink fails, the service should continue when possible and emit an operator-visible warning through the remaining sink.
 
+Configure runtime-owned sinks with `logging.level`, `logging.console`, and `logging.file` in `WORKFLOW.md`. Relative log file paths resolve from the workflow directory. A valid workflow reload updates runtime-owned handlers without removing handlers installed by the host process or tests.
+
 ## Failure Modes
 
 Use this table to choose the first recovery action.

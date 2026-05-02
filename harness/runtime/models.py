@@ -96,6 +96,9 @@ class RuntimeConfig:
     server_enabled: bool = False
     server_host: str = "127.0.0.1"
     server_port: int = 8765
+    logging_level: str = "INFO"
+    logging_console: bool = True
+    logging_file: Path | None = None
 
     def is_active_state(self, state: str | None) -> bool:
         return (state or "").lower() in {item.lower() for item in self.active_states}

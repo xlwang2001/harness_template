@@ -60,7 +60,54 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(config.server_enabled)
             self.assertEqual(config.server_host, "127.0.0.1")
             self.assertEqual(config.server_port, 8765)
+            self.assertEqual(config.logging_level, "INFO")
+            self.assertTrue(config.logging_console)
+            self.assertIsNone(config.logging_file)
             validate_dispatch_config(config)
+
+    def test_logging_config_parses_level_console_and_relative_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+codex:
+  command: "true"
+logging:
+  level: debug
+  console: false
+  file: "logs/runtime.log"
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertEqual(config.logging_level, "DEBUG")
+            self.assertFalse(config.logging_console)
+            self.assertEqual(config.logging_file, Path(directory, "logs", "runtime.log").resolve())
+
+    def test_invalid_logging_level_fails_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+logging:
+  level: verbose
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigValidationError):
+                resolve_config(load_workflow(path))
 
     def test_server_config_parses_enabled_host_and_port(self):
         with tempfile.TemporaryDirectory() as directory:

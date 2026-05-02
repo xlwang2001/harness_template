@@ -1,13 +1,14 @@
 import logging
 import tempfile
 import unittest
+from io import StringIO
 from concurrent.futures import Future
 from pathlib import Path
 
 from harness.runtime.agent import AgentRunResult
 from harness.runtime.models import Issue, RuntimeConfig
 from harness.runtime.orchestrator import Orchestrator
-from harness.runtime.runtime_logging import REDACTED, emit_runtime_log, redact_mapping
+from harness.runtime.runtime_logging import OWNED_HANDLER_ATTR, REDACTED, configure_runtime_logging, emit_runtime_log, redact_mapping
 from harness.runtime.workspace import WorkspaceManager
 
 
@@ -90,6 +91,69 @@ class RuntimeLoggingTests(unittest.TestCase):
         redacted = redact_mapping({"tracker_api_key": SECRET, "error": f"bad {SECRET}"}, secrets=(SECRET,))
         self.assertEqual(redacted["tracker_api_key"], REDACTED)
         self.assertEqual(redacted["error"], f"bad {REDACTED}")
+
+    def test_configure_runtime_logging_installs_file_sink_and_preserves_external_handlers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "runtime.log"
+            logger = logging.getLogger("harness.runtime.test.configure")
+            external_stream = StringIO()
+            external = logging.StreamHandler(external_stream)
+            logger.handlers = [external]
+            try:
+                configure_runtime_logging(logger, level="DEBUG", console=False, file_path=log_path)
+                self.assertIn(external, logger.handlers)
+                owned = [handler for handler in logger.handlers if getattr(handler, OWNED_HANDLER_ATTR, False)]
+                self.assertEqual(len(owned), 1)
+                self.assertEqual(logger.level, logging.DEBUG)
+
+                emit_runtime_log(logger, "file_sink_check", answer=42)
+                for handler in logger.handlers:
+                    handler.flush()
+                self.assertIn("event=file_sink_check answer=42", log_path.read_text(encoding="utf-8"))
+            finally:
+                for handler in list(logger.handlers):
+                    logger.removeHandler(handler)
+                    handler.close()
+
+    def test_configure_runtime_logging_replaces_owned_handlers_without_duplicates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first.log"
+            second = Path(directory) / "second.log"
+            logger = logging.getLogger("harness.runtime.test.reconfigure")
+            logger.handlers = []
+            try:
+                configure_runtime_logging(logger, console=False, file_path=first)
+                configure_runtime_logging(logger, console=False, file_path=second)
+                owned = [handler for handler in logger.handlers if getattr(handler, OWNED_HANDLER_ATTR, False)]
+                self.assertEqual(len(owned), 1)
+                emit_runtime_log(logger, "after_reconfigure")
+                for handler in logger.handlers:
+                    handler.flush()
+                self.assertNotIn("after_reconfigure", first.read_text(encoding="utf-8"))
+                self.assertIn("after_reconfigure", second.read_text(encoding="utf-8"))
+            finally:
+                for handler in list(logger.handlers):
+                    logger.removeHandler(handler)
+                    handler.close()
+
+    def test_configure_runtime_logging_file_sink_failure_is_nonfatal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            blocked_parent = Path(directory) / "not-a-directory"
+            blocked_parent.write_text("file", encoding="utf-8")
+            logger = logging.getLogger("harness.runtime.test.sink_failure")
+            stream = StringIO()
+            external = logging.StreamHandler(stream)
+            logger.handlers = [external]
+            try:
+                configure_runtime_logging(logger, console=False, file_path=blocked_parent / "runtime.log")
+                external.flush()
+                output = stream.getvalue()
+                self.assertIn("event=log_sink_failed", output)
+                self.assertIn("path=", output)
+            finally:
+                for handler in list(logger.handlers):
+                    logger.removeHandler(handler)
+                    handler.close()
 
     def test_orchestrator_emits_structured_lifecycle_logs_without_secrets(self):
         with tempfile.TemporaryDirectory() as directory:
