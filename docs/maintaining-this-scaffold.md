@@ -11,3 +11,9 @@ The upstream repository's `.codex/skills` may be used as reference guidance, but
 ## Compatibility Policy
 
 Patch releases should not break generated target repos. Minor releases may add templates or validators. Major releases may change adoption layout.
+
+Detailed policy lives in `docs/release-compatibility-policy.md`.
+
+## Updating Generated Target Repos
+
+`harness init` is copy-only and does not perform in-place upgrades of adopted target repositories. Use the manual process in `docs/template-upgrade-policy.md` when a target repository wants newer template content.

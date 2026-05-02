@@ -19,6 +19,8 @@ This repo implements a hardened runtime compatible with the upstream Symphony se
 - How to maintain repo knowledge: `docs/knowledge-base-guide.md`
 - Safety and trust posture: `docs/trust-and-safety.md`
 - Maintaining this scaffold: `docs/maintaining-this-scaffold.md`
+- Template upgrade policy: `docs/template-upgrade-policy.md`
+- Release and compatibility policy: `docs/release-compatibility-policy.md`
 - Runtime operator runbooks: `docs/runtime/runbooks.md`
 
 ## Mental Model

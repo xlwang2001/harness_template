@@ -43,3 +43,23 @@ class RuntimeDocsTests(unittest.TestCase):
             self.assertIn(heading, text)
         self.assertIn("docs/runtime/runbooks.md", (root / "docs" / "README.md").read_text(encoding="utf-8"))
         self.assertIn("docs/runtime/runbooks.md", (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8"))
+
+    def test_template_upgrade_and_release_policies_exist_and_are_linked(self):
+        root = Path(__file__).resolve().parent.parent
+        upgrade = root / "docs" / "template-upgrade-policy.md"
+        release = root / "docs" / "release-compatibility-policy.md"
+        self.assertTrue(upgrade.is_file())
+        self.assertTrue(release.is_file())
+        self.assertIn("does not provide a `harness upgrade` command", upgrade.read_text(encoding="utf-8"))
+        self.assertIn("Release Notes Requirements", release.read_text(encoding="utf-8"))
+        docs_index = (root / "docs" / "README.md").read_text(encoding="utf-8")
+        maintainer_doc = (root / "docs" / "maintaining-this-scaffold.md").read_text(encoding="utf-8")
+        for path in ("docs/template-upgrade-policy.md", "docs/release-compatibility-policy.md"):
+            self.assertIn(path, docs_index)
+            self.assertIn(path, maintainer_doc)
+
+    def test_conformance_todo_is_complete(self):
+        root = Path(__file__).resolve().parent.parent
+        todo = root / "docs" / "runtime" / "spec-conformance-todo.md"
+        text = todo.read_text(encoding="utf-8")
+        self.assertNotIn("- [ ]", text)
