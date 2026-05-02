@@ -19,6 +19,7 @@ class RuntimeDocsTests(unittest.TestCase):
             "tests/runtime/test_workflow.py",
             "tests/runtime/test_orchestrator.py",
             "tests/runtime/test_tracker.py",
+            "tests/runtime/test_codex_schema.py",
         ):
             self.assertIn(reference, text)
 
@@ -57,6 +58,12 @@ class RuntimeDocsTests(unittest.TestCase):
         for path in ("docs/template-upgrade-policy.md", "docs/release-compatibility-policy.md"):
             self.assertIn(path, docs_index)
             self.assertIn(path, maintainer_doc)
+
+    def test_implementation_plan_matches_copy_only_upgrade_policy(self):
+        root = Path(__file__).resolve().parent.parent
+        plan = (root / "symphony-harness-engineering-scaffold-plan.md").read_text(encoding="utf-8")
+        self.assertIn("does not provide automatic in-place template upgrades", plan)
+        self.assertNotIn("through `harness upgrade`, not silently", plan)
 
     def test_conformance_todo_is_complete(self):
         root = Path(__file__).resolve().parent.parent

@@ -170,46 +170,50 @@ class _JsonLineAppServerClient:
         self.request(
             "initialize",
             {
-                "cwd": str(workspace_path),
-                "approval_policy": self.config.approval_policy,
-                "thread_sandbox": self.config.thread_sandbox,
-                "turn_sandbox_policy": self.config.turn_sandbox_policy,
-                "client_tools": [{"name": name} for name in sorted(self.client_tools)],
+                "clientInfo": {
+                    "name": "harness-runtime",
+                    "title": "Harness Hardened Symphony Runtime",
+                    "version": "0.1.0",
+                },
+                "capabilities": {
+                    "experimentalApi": True,
+                },
             },
             timeout_ms=self.read_timeout_ms,
         )
 
     def create_thread(self, issue: Issue, workspace_path: Path) -> str:
         result = self.request(
-            "thread/create",
+            "thread/start",
             {
                 "cwd": str(workspace_path),
-                "title": f"{issue.identifier}: {issue.title}",
-                "metadata": {
-                    "issue_id": issue.id,
-                    "issue_identifier": issue.identifier,
-                    "issue_url": issue.url,
-                },
+                "approvalPolicy": self.config.approval_policy,
+                "sandbox": self.config.thread_sandbox,
+                "serviceName": "harness-runtime",
+                "ephemeral": True,
             },
             timeout_ms=self.read_timeout_ms,
         )
-        return _extract_identifier(result, ("thread_id", "threadId", "id"), nested=("thread", "session"))
+        thread_id = _extract_identifier(result, ("thread_id", "threadId", "id"), nested=("thread", "session"))
+        self.request(
+            "thread/name/set",
+            {
+                "threadId": thread_id,
+                "name": f"{issue.identifier}: {issue.title}",
+            },
+            timeout_ms=self.read_timeout_ms,
+        )
+        return thread_id
 
     def start_turn(self, issue: Issue, prompt: str, workspace_path: Path, thread_id: str, attempt: int | None) -> str:
         result = self.request(
             "turn/start",
             {
-                "thread_id": thread_id,
+                "threadId": thread_id,
                 "cwd": str(workspace_path),
-                "prompt": prompt,
-                "approval_policy": self.config.approval_policy,
-                "sandbox_policy": self.config.turn_sandbox_policy,
-                "title": f"{issue.identifier}: {issue.title}",
-                "metadata": {
-                    "issue_id": issue.id,
-                    "issue_identifier": issue.identifier,
-                    "attempt": attempt,
-                },
+                "input": [{"type": "text", "text": prompt}],
+                "approvalPolicy": self.config.approval_policy,
+                "sandboxPolicy": _sandbox_policy(self.config.turn_sandbox_policy),
             },
             timeout_ms=self.read_timeout_ms,
         )
@@ -246,35 +250,40 @@ class _JsonLineAppServerClient:
             self.respond_to_approval(event)
             self.emit({"event": "approval_auto_approved", "approval_id": _event_identifier(event), "message": "approved by runtime policy"})
             return True
+        if name == "permissions_approval_requested":
+            self.respond_to_permissions_request(event)
+            self.emit({"event": "approval_auto_resolved", "approval_id": _event_identifier(event), "message": "no additional permissions granted by runtime policy"})
+            return True
+        if name == "turn_input_required":
+            self.respond_to_user_input(event)
+            return False
         if name in {"tool_call", "client_tool_call"}:
             self.respond_to_tool_call(event)
             return True
         return False
 
     def respond_to_approval(self, event: Mapping[str, Any]) -> None:
-        self.write_message(
-            {
-                "jsonrpc": "2.0",
-                "method": "approval/respond",
-                "params": {
-                    "approval_id": _event_identifier(event),
-                    "approved": True,
-                    "reason": "auto-approved by runtime policy",
-                },
-            }
-        )
+        self.write_response(_request_id(event), {"decision": "acceptForSession"})
+
+    def respond_to_permissions_request(self, event: Mapping[str, Any]) -> None:
+        self.write_response(_request_id(event), {"permissions": {"fileSystem": None, "network": None}, "scope": "turn"})
+
+    def respond_to_user_input(self, event: Mapping[str, Any]) -> None:
+        request_id = _request_id(event)
+        if request_id is not None:
+            self.write_response(request_id, {"answers": {}})
 
     def respond_to_tool_call(self, event: Mapping[str, Any]) -> None:
         tool_name = _tool_name(event)
         call_id = _event_identifier(event)
         if tool_name not in self.client_tools:
-            self.write_message(_tool_result(call_id, tool_name, False, {"error": "unsupported_tool_call"}))
+            self.write_response(_request_id(event), _tool_result(False, {"error": "unsupported_tool_call"}))
             self.emit({"event": "unsupported_tool_call", "tool_name": tool_name, "tool_call_id": call_id})
             return
         try:
             result = self.client_tools[tool_name](_tool_arguments(event))
         except Exception as exc:
-            self.write_message(_tool_result(call_id, tool_name, False, {"error": str(exc)}))
+            self.write_response(_request_id(event), _tool_result(False, {"error": str(exc)}))
             self.emit({"event": "client_tool_failed", "tool_name": tool_name, "tool_call_id": call_id, "message": str(exc)})
             return
         if isinstance(result, ClientToolResult):
@@ -283,7 +292,7 @@ class _JsonLineAppServerClient:
         else:
             success = True
             output = result
-        self.write_message(_tool_result(call_id, tool_name, success, output))
+        self.write_response(_request_id(event), _tool_result(success, output))
         event_name = "client_tool_completed" if success else "client_tool_failed"
         self.emit({"event": event_name, "tool_name": tool_name, "tool_call_id": call_id})
 
@@ -297,6 +306,7 @@ class _JsonLineAppServerClient:
             event = _event_from_message(message)
             if event is not None:
                 self.emit(event)
+                self.handle_policy_event(event)
                 continue
             if message.get("id") != request_id:
                 continue
@@ -315,6 +325,11 @@ class _JsonLineAppServerClient:
             self.process.stdin.flush()
         except BrokenPipeError as exc:
             raise AgentRunnerError("port_exit") from exc
+
+    def write_response(self, request_id: object | None, result: Mapping[str, Any]) -> None:
+        if request_id is None:
+            raise AgentRunnerError("response_error")
+        self.write_message({"jsonrpc": "2.0", "id": request_id, "result": dict(result)})
 
     def read_message(self, *, deadline: float, timeout_error: str) -> Mapping[str, Any]:
         while True:
@@ -344,10 +359,6 @@ class _JsonLineAppServerClient:
 
     def close(self) -> None:
         if self.process.poll() is None:
-            try:
-                self.write_message({"jsonrpc": "2.0", "method": "shutdown", "params": {}})
-            except AgentRunnerError:
-                pass
             self.process.terminate()
             try:
                 self.process.wait(timeout=1)
@@ -375,11 +386,88 @@ def _event_from_message(message: Mapping[str, Any]) -> dict[str, Any] | None:
         return dict(message)
     method = message.get("method")
     params = message.get("params")
+    if method == "thread/tokenUsage/updated" and isinstance(params, Mapping):
+        event = dict(params)
+        event["event"] = "thread/tokenUsage/updated"
+        total = _nested_mapping(params, ("tokenUsage", "total"))
+        if total:
+            event["usage"] = total
+        return event
+    if method == "account/rateLimits/updated" and isinstance(params, Mapping):
+        event = dict(params)
+        event["event"] = "account/rateLimits/updated"
+        return event
+    if method == "turn/completed" and isinstance(params, Mapping):
+        event = dict(params)
+        event["event"] = "turn_completed"
+        event["thread_id"] = params.get("threadId")
+        event["turn_id"] = _extract_turn_id_from_params(params)
+        return event
+    if method == "turn/started" and isinstance(params, Mapping):
+        event = dict(params)
+        event["event"] = "turn_started"
+        event["thread_id"] = params.get("threadId")
+        event["turn_id"] = _extract_turn_id_from_params(params)
+        return event
+    if method == "error" and isinstance(params, Mapping):
+        event = dict(params)
+        event["event"] = "turn_failed"
+        event["thread_id"] = params.get("threadId")
+        event["turn_id"] = params.get("turnId")
+        error = params.get("error")
+        if isinstance(error, Mapping):
+            event["message"] = error.get("message")
+        return event
+    if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval"} and isinstance(params, Mapping):
+        event = dict(params)
+        event.update(
+            {
+                "event": "command_approval_requested" if method == "item/commandExecution/requestApproval" else "file_change_approval_requested",
+                "_request_id": message.get("id"),
+            }
+        )
+        return event
+    if method == "item/tool/requestUserInput" and isinstance(params, Mapping):
+        event = dict(params)
+        event.update({"event": "turn_input_required", "_request_id": message.get("id")})
+        return event
+    if method == "item/permissions/requestApproval" and isinstance(params, Mapping):
+        event = dict(params)
+        event.update({"event": "permissions_approval_requested", "_request_id": message.get("id")})
+        return event
+    if method == "item/tool/call" and isinstance(params, Mapping):
+        event = dict(params)
+        event.update(
+            {
+                "event": "client_tool_call",
+                "tool_name": params.get("tool"),
+                "tool_call_id": params.get("callId"),
+                "_request_id": message.get("id"),
+            }
+        )
+        return event
     if method in {"event", "notification"} and isinstance(params, Mapping):
         event = dict(params)
         event.setdefault("event", method)
         return event
     return None
+
+
+def _nested_mapping(mapping: Mapping[str, Any], path: tuple[str, ...]) -> Mapping[str, Any] | None:
+    current: Any = mapping
+    for key in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current if isinstance(current, Mapping) else None
+
+
+def _extract_turn_id_from_params(params: Mapping[str, Any]) -> str | None:
+    turn = params.get("turn")
+    if isinstance(turn, Mapping) and turn.get("id"):
+        return str(turn["id"])
+    turn_id = params.get("turnId")
+    return str(turn_id) if turn_id else None
 
 
 def _extract_identifier(result: Mapping[str, Any], keys: tuple[str, ...], *, nested: tuple[str, ...]) -> str:
@@ -398,27 +486,31 @@ def _extract_identifier(result: Mapping[str, Any], keys: tuple[str, ...], *, nes
 
 
 def _event_identifier(event: Mapping[str, Any]) -> str | None:
-    for key in ("id", "approval_id", "approvalId", "tool_call_id", "toolCallId", "call_id", "callId"):
+    for key in ("id", "approval_id", "approvalId", "tool_call_id", "toolCallId", "call_id", "callId", "itemId"):
         value = event.get(key)
         if value:
             return str(value)
     payload = event.get("payload")
     if isinstance(payload, Mapping):
-        for key in ("id", "approval_id", "approvalId", "tool_call_id", "toolCallId", "call_id", "callId"):
+        for key in ("id", "approval_id", "approvalId", "tool_call_id", "toolCallId", "call_id", "callId", "itemId"):
             value = payload.get(key)
             if value:
                 return str(value)
     return None
 
 
+def _request_id(event: Mapping[str, Any]) -> object | None:
+    return event.get("_request_id")
+
+
 def _tool_name(event: Mapping[str, Any]) -> str | None:
-    for key in ("tool_name", "toolName", "name"):
+    for key in ("tool_name", "toolName", "name", "tool"):
         value = event.get(key)
         if value:
             return str(value)
     payload = event.get("payload")
     if isinstance(payload, Mapping):
-        for key in ("tool_name", "toolName", "name"):
+        for key in ("tool_name", "toolName", "name", "tool"):
             value = payload.get(key)
             if value:
                 return str(value)
@@ -437,14 +529,25 @@ def _tool_arguments(event: Mapping[str, Any]) -> Any:
     return {}
 
 
-def _tool_result(call_id: str | None, tool_name: str | None, success: bool, output: Any) -> dict[str, Any]:
+def _tool_result(success: bool, output: Any) -> dict[str, Any]:
     return {
-        "jsonrpc": "2.0",
-        "method": "tool/result",
-        "params": {
-            "tool_call_id": call_id,
-            "tool_name": tool_name,
-            "success": success,
-            "output": output,
-        },
+        "contentItems": [{"type": "inputText", "text": _tool_output_text(output)}],
+        "success": success,
     }
+
+
+def _tool_output_text(output: Any) -> str:
+    if isinstance(output, str):
+        return output
+    return json.dumps(output, sort_keys=True)
+
+
+def _sandbox_policy(value: str) -> dict[str, Any]:
+    normalized = value.strip().lower()
+    if normalized in {"workspace-write", "workspacewrite"}:
+        return {"type": "workspaceWrite"}
+    if normalized in {"read-only", "readonly"}:
+        return {"type": "readOnly"}
+    if normalized in {"danger-full-access", "dangerfullaccess"}:
+        return {"type": "dangerFullAccess"}
+    return {"type": "workspaceWrite"}

@@ -23,7 +23,7 @@ This repository should:
    - how to write issues for agent execution,
    - how to review agent output,
    - how to maintain repository-local knowledge,
-   - how to operate Symphony safely.
+   - how to operate the hardened runtime safely.
 4. Provide **validation and smoke tests**:
    - check that target repos contain the right docs,
    - check that `WORKFLOW.md` is valid,
@@ -262,7 +262,7 @@ target-project/
     workflows/harness-docs.yml
 ```
 
-Important: the target project owns copied files after adoption. Updates should be applied intentionally through `harness upgrade`, not silently.
+Important: the target project owns copied files after adoption. This scaffold version does not provide automatic in-place template upgrades; update adopted repositories by reading release notes, manually diffing template changes, copying selected changes, and running target validation.
 
 ---
 

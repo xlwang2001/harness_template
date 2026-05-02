@@ -13,11 +13,11 @@ This runtime follows the upstream [Symphony service specification](https://githu
 
 ## Current Limitations
 
-The runtime has a hardened orchestration boundary and conformance tests, and `CodexAgentRunner` now owns app-server launch, session/thread/turn startup, event streaming, timeout handling, and terminal error mapping. `SPEC.md` intentionally defers exact protocol envelopes to the targeted Codex app-server version, so production use should verify the adapter against the generated schema for the installed Codex version and run real tracker smoke tests before unattended operation.
+The runtime has a hardened orchestration boundary and conformance tests, and `CodexAgentRunner` now owns app-server launch, schema-aligned session/thread/turn startup, event streaming, timeout handling, and terminal error mapping. `SPEC.md` intentionally defers exact protocol envelopes to the targeted Codex app-server version, so run `make codex-schema-test` after installing the optional `schema` test extra when upgrading Codex.
 
 User-input-required events fail the current run immediately as `turn_input_required`; the orchestrator then applies the normal retry policy. Command and file-change approval requests are auto-approved according to the documented high-trust runtime posture. Registered client-side tools are handled by explicit runtime handlers, while unsupported tool calls return structured failures and allow the session to continue. These policies keep runs from waiting indefinitely for operator input or unsupported tool execution.
 
-When the runtime uses the Linear tracker, it registers the optional `linear_graphql` client-side tool. The tool reuses configured Linear credentials, accepts one GraphQL operation per call, and returns structured success or failure payloads that the agent can inspect without reading raw tokens.
+When the runtime uses the Linear tracker, it can answer the optional `linear_graphql` client-side tool request. The tool reuses configured Linear credentials, accepts one GraphQL operation per call, and returns structured success or failure payloads that the agent can inspect without reading raw tokens. Tool startup advertisement is intentionally limited to fields supported by the targeted generated Codex schema.
 
 The optional status API is disabled by default. Enable it with `server.port` in `WORKFLOW.md` or with `harness run --port PORT`; the CLI port overrides workflow config. `server.enabled: true` remains accepted as a compatibility shorthand and uses port `8765` when no port is given. The server binds to `server.host` (default `127.0.0.1`) and serves `/`, `GET /api/v1/state`, `GET /api/v1/<issue_identifier>`, and `POST /api/v1/refresh`. Listener changes require a runtime restart.
 

@@ -69,3 +69,4 @@
 - [x] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 - [x] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.
 - [x] Add release notes and compatibility policy for generated target repos.
+- [x] Align Codex app-server envelopes with generated schema and add schema verification.

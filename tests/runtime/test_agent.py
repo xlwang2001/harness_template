@@ -80,45 +80,59 @@ for line in sys.stdin:
             time.sleep(2)
             continue
         send({"jsonrpc": "2.0", "id": request_id, "result": {"ok": True}})
-    elif method == "thread/create":
+    elif method == "thread/start":
         send({"jsonrpc": "2.0", "id": request_id, "result": {"thread": {"id": "thread-1"}}})
+    elif method == "thread/name/set":
+        send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif method == "turn/start":
         turn_count += 1
         turn_id = f"turn-{turn_count}"
-        send({"jsonrpc": "2.0", "id": request_id, "result": {"turn_id": turn_id}})
+        send({"jsonrpc": "2.0", "id": request_id, "result": {"turn": {"id": turn_id, "items": [], "status": "running"}}})
         if mode == "success":
             send({"event": "notification", "message": "working"})
             send({
-                "event": "thread/tokenUsage/updated",
-                "usage": {"input_tokens": 5, "output_tokens": 6, "total_tokens": 11},
-                "rate_limits": {"primary": {"remaining": 10}},
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": turn_id,
+                    "tokenUsage": {
+                        "last": {"inputTokens": 5, "outputTokens": 6, "totalTokens": 11, "cachedInputTokens": 0, "reasoningOutputTokens": 0},
+                        "total": {"inputTokens": 5, "outputTokens": 6, "totalTokens": 11, "cachedInputTokens": 0, "reasoningOutputTokens": 0},
+                    },
+                },
             })
-            send({"event": "turn_completed"})
+            send({"method": "account/rateLimits/updated", "params": {"rateLimits": {"primary": {"remaining": 10}}}})
+            send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
         elif mode == "multi_turn":
             send({"event": "notification", "message": f"working {turn_count}"})
-            send({"event": "turn_completed"})
+            send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
         elif mode == "failure":
-            send({"event": "turn_failed", "message": "bad turn"})
+            send({"method": "error", "params": {"threadId": "thread-1", "turnId": turn_id, "willRetry": False, "error": {"message": "bad turn"}}})
         elif mode == "cancelled":
             send({"event": "turn_cancelled"})
         elif mode == "input_required":
-            send({"event": "turn_input_required"})
+            send({"jsonrpc": "2.0", "id": "input-1", "method": "item/tool/requestUserInput", "params": {"threadId": "thread-1", "turnId": turn_id, "questions": []}})
+            response = json.loads(sys.stdin.readline())
+            record(response)
         elif mode == "approval_tools":
-            send({"event": "command_approval_requested", "id": "approval-1", "command": "pytest"})
+            send({"jsonrpc": "2.0", "id": "approval-1", "method": "item/commandExecution/requestApproval", "params": {"itemId": "item-approval-1", "threadId": "thread-1", "turnId": turn_id, "command": "pytest"}})
             approval = json.loads(sys.stdin.readline())
             record(approval)
-            send({"event": "client_tool_call", "tool_call_id": "tool-unsupported", "tool_name": "missing_tool", "arguments": {"value": 1}})
+            send({"jsonrpc": "2.0", "id": "permissions-1", "method": "item/permissions/requestApproval", "params": {"threadId": "thread-1", "turnId": turn_id, "permissions": {}}})
+            permissions = json.loads(sys.stdin.readline())
+            record(permissions)
+            send({"jsonrpc": "2.0", "id": "tool-unsupported", "method": "item/tool/call", "params": {"callId": "tool-unsupported", "threadId": "thread-1", "turnId": turn_id, "tool": "missing_tool", "arguments": {"value": 1}}})
             unsupported = json.loads(sys.stdin.readline())
             record(unsupported)
-            send({"event": "client_tool_call", "tool_call_id": "tool-supported", "tool_name": "echo", "arguments": {"value": 2}})
+            send({"jsonrpc": "2.0", "id": "tool-supported", "method": "item/tool/call", "params": {"callId": "tool-supported", "threadId": "thread-1", "turnId": turn_id, "tool": "echo", "arguments": {"value": 2}}})
             supported = json.loads(sys.stdin.readline())
             record(supported)
-            send({"event": "turn_completed"})
+            send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
         elif mode == "linear_graphql":
-            send({"event": "client_tool_call", "tool_call_id": "linear-1", "tool_name": "linear_graphql", "arguments": {"query": "query A { viewer { id } }"}})
+            send({"jsonrpc": "2.0", "id": "linear-1", "method": "item/tool/call", "params": {"callId": "linear-1", "threadId": "thread-1", "turnId": turn_id, "tool": "linear_graphql", "arguments": {"query": "query A { viewer { id } }"}}})
             result = json.loads(sys.stdin.readline())
             record(result)
-            send({"event": "turn_completed"})
+            send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
         elif mode == "turn_timeout":
             time.sleep(2)
         elif mode == "exit_during_turn":
@@ -156,18 +170,20 @@ class CodexAgentRunnerTests(unittest.TestCase):
 
             self.assertTrue(result.success)
             self.assertEqual(result.session_id, "thread-1-turn-1")
-            self.assertEqual([event["event"] for event in events], ["session_started", "notification", "thread/tokenUsage/updated", "turn_completed"])
+            self.assertEqual([event["event"] for event in events], ["session_started", "notification", "thread/tokenUsage/updated", "account/rateLimits/updated", "turn_completed"])
             self.assertEqual(events[0]["thread_id"], "thread-1")
             self.assertEqual(events[0]["turn_id"], "turn-1")
-            self.assertEqual(events[2]["rate_limits"], {"primary": {"remaining": 10}})
+            self.assertEqual(events[3]["rateLimits"], {"primary": {"remaining": 10}})
             records = json.loads(record.read_text(encoding="utf-8"))
-            self.assertEqual([message["method"] for message in records[:3]], ["initialize", "thread/create", "turn/start"])
-            self.assertEqual(records[0]["params"]["cwd"], str(workspace.resolve()))
-            self.assertEqual(records[0]["params"]["approval_policy"], "on-request")
-            self.assertEqual(records[0]["params"]["thread_sandbox"], "workspace-write")
-            self.assertEqual(records[2]["params"]["prompt"], "Do the work")
-            self.assertEqual(records[2]["params"]["thread_id"], "thread-1")
-            self.assertEqual(records[2]["params"]["metadata"]["issue_identifier"], "ABC-1")
+            self.assertEqual([message["method"] for message in records[:4]], ["initialize", "thread/start", "thread/name/set", "turn/start"])
+            self.assertEqual(records[0]["params"]["clientInfo"]["name"], "harness-runtime")
+            self.assertEqual(records[1]["params"]["cwd"], str(workspace.resolve()))
+            self.assertEqual(records[1]["params"]["approvalPolicy"], "on-request")
+            self.assertEqual(records[1]["params"]["sandbox"], "workspace-write")
+            self.assertEqual(records[2]["params"]["name"], "ABC-1: Test issue")
+            self.assertEqual(records[3]["params"]["input"], [{"type": "text", "text": "Do the work"}])
+            self.assertEqual(records[3]["params"]["threadId"], "thread-1")
+            self.assertEqual(records[3]["params"]["sandboxPolicy"], {"type": "workspaceWrite"})
 
     def test_protocol_continuation_turns_reuse_thread_and_send_continuation_prompt(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -192,11 +208,10 @@ class CodexAgentRunnerTests(unittest.TestCase):
             records = json.loads(record.read_text(encoding="utf-8"))
             turn_starts = [message for message in records if message.get("method") == "turn/start"]
             self.assertEqual(len(turn_starts), 2)
-            self.assertEqual(turn_starts[0]["params"]["thread_id"], "thread-1")
-            self.assertEqual(turn_starts[1]["params"]["thread_id"], "thread-1")
-            self.assertEqual(turn_starts[0]["params"]["prompt"], "Do the work")
-            self.assertEqual(turn_starts[1]["params"]["prompt"], "Continue from prior work")
-            self.assertEqual(turn_starts[1]["params"]["metadata"]["attempt"], 4)
+            self.assertEqual(turn_starts[0]["params"]["threadId"], "thread-1")
+            self.assertEqual(turn_starts[1]["params"]["threadId"], "thread-1")
+            self.assertEqual(turn_starts[0]["params"]["input"], [{"type": "text", "text": "Do the work"}])
+            self.assertEqual(turn_starts[1]["params"]["input"], [{"type": "text", "text": "Continue from prior work"}])
 
     def test_protocol_turn_failure_maps_to_runner_error(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -230,20 +245,21 @@ class CodexAgentRunnerTests(unittest.TestCase):
 
             names = [event["event"] for event in events]
             self.assertIn("approval_auto_approved", names)
+            self.assertIn("approval_auto_resolved", names)
             self.assertIn("unsupported_tool_call", names)
             self.assertIn("client_tool_completed", names)
             records = json.loads(record.read_text(encoding="utf-8"))
-            self.assertEqual(records[0]["params"]["client_tools"], [{"name": "echo"}])
-            approval_response = next(message for message in records if message.get("method") == "approval/respond")
-            self.assertEqual(approval_response["params"]["approval_id"], "approval-1")
-            self.assertTrue(approval_response["params"]["approved"])
-            tool_results = [message for message in records if message.get("method") == "tool/result"]
-            self.assertEqual(tool_results[0]["params"]["tool_call_id"], "tool-unsupported")
-            self.assertFalse(tool_results[0]["params"]["success"])
-            self.assertEqual(tool_results[0]["params"]["output"], {"error": "unsupported_tool_call"})
-            self.assertEqual(tool_results[1]["params"]["tool_call_id"], "tool-supported")
-            self.assertTrue(tool_results[1]["params"]["success"])
-            self.assertEqual(tool_results[1]["params"]["output"], {"echoed": {"value": 2}})
+            approval_response = next(message for message in records if message.get("id") == "approval-1")
+            self.assertEqual(approval_response["result"]["decision"], "acceptForSession")
+            permissions_response = next(message for message in records if message.get("id") == "permissions-1")
+            self.assertEqual(permissions_response["result"]["permissions"], {"fileSystem": None, "network": None})
+            tool_results = [message for message in records if message.get("id") in {"tool-unsupported", "tool-supported"}]
+            self.assertEqual(tool_results[0]["id"], "tool-unsupported")
+            self.assertFalse(tool_results[0]["result"]["success"])
+            self.assertEqual(json.loads(tool_results[0]["result"]["contentItems"][0]["text"]), {"error": "unsupported_tool_call"})
+            self.assertEqual(tool_results[1]["id"], "tool-supported")
+            self.assertTrue(tool_results[1]["result"]["success"])
+            self.assertEqual(json.loads(tool_results[1]["result"]["contentItems"][0]["text"]), {"echoed": {"value": 2}})
 
     def test_protocol_advertises_and_returns_successful_linear_graphql_result(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -258,12 +274,9 @@ class CodexAgentRunnerTests(unittest.TestCase):
             runner.run_turn(issue(), "Do the work", workspace, on_event=events.append)
 
             records = json.loads(record.read_text(encoding="utf-8"))
-            self.assertEqual(records[0]["params"]["client_tools"], [{"name": "linear_graphql"}])
-            tool_result = next(message for message in records if message.get("method") == "tool/result")
-            self.assertEqual(tool_result["params"]["tool_call_id"], "linear-1")
-            self.assertEqual(tool_result["params"]["tool_name"], "linear_graphql")
-            self.assertTrue(tool_result["params"]["success"])
-            self.assertEqual(tool_result["params"]["output"]["data"], {"ok": True})
+            tool_result = next(message for message in records if message.get("id") == "linear-1")
+            self.assertTrue(tool_result["result"]["success"])
+            self.assertEqual(json.loads(tool_result["result"]["contentItems"][0]["text"])["data"], {"ok": True})
             self.assertIn("client_tool_completed", [event["event"] for event in events])
 
     def test_protocol_returns_failed_linear_graphql_result(self):
@@ -279,9 +292,9 @@ class CodexAgentRunnerTests(unittest.TestCase):
             runner.run_turn(issue(), "Do the work", workspace, on_event=events.append)
 
             records = json.loads(record.read_text(encoding="utf-8"))
-            tool_result = next(message for message in records if message.get("method") == "tool/result")
-            self.assertFalse(tool_result["params"]["success"])
-            self.assertEqual(tool_result["params"]["output"], {"error": "invalid_query"})
+            tool_result = next(message for message in records if message.get("id") == "linear-1")
+            self.assertFalse(tool_result["result"]["success"])
+            self.assertEqual(json.loads(tool_result["result"]["contentItems"][0]["text"]), {"error": "invalid_query"})
             self.assertIn("client_tool_failed", [event["event"] for event in events])
 
     def test_protocol_read_timeout_maps_to_response_timeout(self):
