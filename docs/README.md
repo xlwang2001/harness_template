@@ -23,6 +23,7 @@ This repo implements a hardened runtime compatible with the upstream Symphony se
 - Release and compatibility policy: `docs/release-compatibility-policy.md`
 - Runtime operator runbooks: `docs/runtime/runbooks.md`
 - Runtime production readiness checklist: `docs/runtime/production-readiness-checklist.md`
+- Release history: `CHANGELOG.md`
 
 ## Mental Model
 

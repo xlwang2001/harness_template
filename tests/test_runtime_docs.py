@@ -1,5 +1,8 @@
+import tomllib
 import unittest
 from pathlib import Path
+
+import harness
 
 
 class RuntimeDocsTests(unittest.TestCase):
@@ -81,6 +84,43 @@ class RuntimeDocsTests(unittest.TestCase):
         for path in ("docs/template-upgrade-policy.md", "docs/release-compatibility-policy.md"):
             self.assertIn(path, docs_index)
             self.assertIn(path, maintainer_doc)
+
+    def test_changelog_documents_1_0_release_status_and_is_linked(self):
+        root = Path(__file__).resolve().parent.parent
+        changelog = root / "CHANGELOG.md"
+        self.assertTrue(changelog.is_file())
+        text = changelog.read_text(encoding="utf-8")
+        for expected in (
+            "## 1.0.0",
+            "Linear-first hardened runtime release",
+            "`linear_graphql` startup advertisement is schema-blocked",
+            "Non-Linear tracker adapters are deferred",
+            "Real Linear mutation integration remains separately gated",
+            "Advanced workspace population, remote checkout, and remote execution remain future hardening",
+        ):
+            self.assertIn(expected, text)
+        for doc in (
+            root / "README.md",
+            root / "docs" / "README.md",
+            root / "docs" / "maintaining-this-scaffold.md",
+        ):
+            self.assertIn("CHANGELOG.md", doc.read_text(encoding="utf-8"))
+
+    def test_package_version_is_1_0_0(self):
+        root = Path(__file__).resolve().parent.parent
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertEqual(pyproject["project"]["version"], "1.0.0")
+        self.assertEqual(harness.__version__, "1.0.0")
+
+    def test_readme_describes_1_0_status_not_early_stage(self):
+        root = Path(__file__).resolve().parent.parent
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        plan = (root / "symphony-harness-engineering-scaffold-plan.md").read_text(encoding="utf-8")
+        self.assertIn("1.0 Linear-first hardened runtime scaffold", readme)
+        self.assertIn("1.0 Linear-first hardened runtime scaffold", plan)
+        self.assertNotIn("early conformance stage", readme)
+        self.assertNotIn("Early hardened runtime scaffold", readme)
+        self.assertNotIn("Early hardened runtime scaffold", plan)
 
     def test_implementation_plan_matches_copy_only_upgrade_policy(self):
         root = Path(__file__).resolve().parent.parent

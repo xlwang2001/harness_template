@@ -1142,7 +1142,7 @@ Start with `docs/README.md`.
 
 ## Status
 
-Early hardened runtime scaffold. Use least-privilege credentials and human review gates first.
+1.0 Linear-first hardened runtime scaffold. Use least-privilege credentials, the production readiness checklist, and human review gates before unattended production use.
 ```
 
 ---

@@ -14,6 +14,8 @@ Patch releases should not break generated target repos. Minor releases may add t
 
 Detailed policy lives in `docs/release-compatibility-policy.md`.
 
+Release history lives in `CHANGELOG.md`.
+
 Before tagging runtime-facing releases, follow `docs/runtime/production-readiness-checklist.md` so gated integration and Codex schema checks are recorded deliberately.
 
 ## Updating Generated Target Repos
