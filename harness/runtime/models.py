@@ -99,6 +99,9 @@ class RuntimeConfig:
     logging_level: str = "INFO"
     logging_console: bool = True
     logging_file: Path | None = None
+    runtime_state_file: Path | None = None
+    runtime_state_persist_retries: bool = False
+    runtime_state_persist_sessions: bool = False
 
     def is_active_state(self, state: str | None) -> bool:
         return (state or "").lower() in {item.lower() for item in self.active_states}
@@ -166,6 +169,7 @@ class RuntimeState:
     claimed: set[str] = field(default_factory=set)
     retry_attempts: dict[str, RetryEntry] = field(default_factory=dict)
     last_attempts: dict[str, RunAttemptRecord] = field(default_factory=dict)
+    session_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     completed: set[str] = field(default_factory=set)
     codex_totals: dict[str, float] = field(
         default_factory=lambda: {

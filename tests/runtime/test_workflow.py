@@ -63,6 +63,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(config.logging_level, "INFO")
             self.assertTrue(config.logging_console)
             self.assertIsNone(config.logging_file)
+            self.assertIsNone(config.runtime_state_file)
+            self.assertFalse(config.runtime_state_persist_retries)
+            self.assertFalse(config.runtime_state_persist_sessions)
             validate_dispatch_config(config)
 
     def test_logging_config_parses_level_console_and_relative_file(self):
@@ -108,6 +111,54 @@ Issue {{ issue.identifier }}
             )
             with self.assertRaises(ConfigValidationError):
                 resolve_config(load_workflow(path))
+
+    def test_runtime_state_file_defaults_persistence_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+codex:
+  command: "true"
+runtime_state:
+  file: ".harness/runtime-state.json"
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertEqual(config.runtime_state_file, Path(directory, ".harness", "runtime-state.json").resolve())
+            self.assertTrue(config.runtime_state_persist_retries)
+            self.assertTrue(config.runtime_state_persist_sessions)
+
+    def test_runtime_state_persistence_flags_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+codex:
+  command: "true"
+runtime_state:
+  file: "runtime-state.json"
+  persist_retries: false
+  persist_sessions: false
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertEqual(config.runtime_state_file, Path(directory, "runtime-state.json").resolve())
+            self.assertFalse(config.runtime_state_persist_retries)
+            self.assertFalse(config.runtime_state_persist_sessions)
 
     def test_server_config_parses_enabled_host_and_port(self):
         with tempfile.TemporaryDirectory() as directory:

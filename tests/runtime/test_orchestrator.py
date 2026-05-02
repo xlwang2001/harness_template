@@ -1,3 +1,4 @@
+import json
 import logging
 import tempfile
 import threading
@@ -7,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from harness.runtime.agent import AgentRunnerError, AgentRunResult
-from harness.runtime.models import BlockerRef, Issue, RetryEntry, RuntimeConfig, RunningEntry
+from harness.runtime.models import BlockerRef, Issue, RetryEntry, RunAttemptRecord, RuntimeConfig, RunningEntry
 from harness.runtime.orchestrator import Orchestrator
 from harness.runtime.tracker import TrackerError
 from harness.runtime.workspace import WorkspaceManager
@@ -744,6 +745,126 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual((workspace.path / "marker.txt").read_text(encoding="utf-8"), "preserved")
             self.assertEqual(len(runner.prompts), 1)
             self.assertEqual(runner.prompts[0][2], workspace.path)
+
+    def test_opt_in_runtime_state_restores_retry_attempt_and_session_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-40", state="Todo")
+            state_file = root / ".harness" / "runtime-state.json"
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "runtime_state_file": state_file,
+                    "runtime_state_persist_retries": True,
+                    "runtime_state_persist_sessions": True,
+                }
+            )
+            first = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            first.schedule_retry(candidate, attempt=4, error="old process")
+            first.state.retry_attempts[candidate.id].due_at_ms = 0
+            started = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+            finished = datetime(2026, 1, 1, 12, 2, tzinfo=timezone.utc)
+            first.state.last_attempts[candidate.id] = RunAttemptRecord(
+                issue_id=candidate.id,
+                identifier=candidate.identifier,
+                attempt=3,
+                workspace_path=root / "ABC-40",
+                started_at=started,
+                finished_at=finished,
+                status="failed",
+                error="agent failed",
+            )
+            first.state.completed.add("abc-previous")
+            first.state.codex_totals["input_tokens"] = 12
+            first.state.codex_rate_limits = {"primary": {"remaining": 6}}
+            first.state.session_metadata[candidate.id] = {
+                "issue_identifier": candidate.identifier,
+                "session_id": "session-40",
+                "thread_id": "thread-40",
+                "turn_id": "turn-3",
+                "turn_count": 3,
+                "last_codex_event": "turn_failed",
+            }
+            first.state.running[candidate.id] = RunningEntry(issue=candidate, started_at=started)
+            first.state.claimed.add(candidate.id)
+            first.state.worker_futures[candidate.id] = Future()
+            first._persist_state()
+
+            runner = FakeRunner()
+            restarted = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+
+            self.assertEqual(restarted.state.running, {})
+            self.assertEqual(restarted.state.claimed, set())
+            self.assertEqual(restarted.state.worker_futures, {})
+            self.assertEqual(restarted.state.retry_attempts[candidate.id].attempt, 4)
+            self.assertEqual(restarted.state.retry_attempts[candidate.id].due_at_ms, 0)
+            self.assertEqual(restarted.state.last_attempts[candidate.id].status, "failed")
+            self.assertEqual(restarted.state.completed, {"abc-previous"})
+            self.assertEqual(restarted.state.codex_totals["input_tokens"], 12)
+            self.assertEqual(restarted.state.codex_rate_limits, {"primary": {"remaining": 6}})
+            self.assertEqual(restarted.state.session_metadata[candidate.id]["session_id"], "session-40")
+
+    def test_restored_due_retry_dispatches_when_candidate_reappears(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-41", state="Todo")
+            state_file = root / "runtime-state.json"
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "runtime_state_file": state_file,
+                    "runtime_state_persist_retries": True,
+                    "runtime_state_persist_sessions": True,
+                }
+            )
+            first = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            first.schedule_retry(candidate, attempt=2, error="agent failed")
+            first.state.retry_attempts[candidate.id].due_at_ms = 0
+            first._persist_state()
+
+            runner = FakeRunner()
+            restarted = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+
+            restarted.process_due_retries()
+
+            self.assertEqual(len(runner.prompts), 1)
+            self.assertEqual(runner.prompts[0][3], 2)
+            self.assertEqual(restarted.state.last_attempts[candidate.id].attempt, 2)
+            self.assertEqual(restarted.state.retry_attempts[candidate.id].attempt, 1)
+
+    def test_runtime_state_file_omits_tracker_secret_and_live_ownership(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            secret = "linear-secret-token"
+            candidate = issue("ABC-42")
+            state_file = root / "runtime-state.json"
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "tracker_api_key": secret,
+                    "runtime_state_file": state_file,
+                    "runtime_state_persist_retries": True,
+                    "runtime_state_persist_sessions": True,
+                }
+            )
+            orchestrator = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            orchestrator.state.running[candidate.id] = RunningEntry(
+                issue=candidate,
+                started_at=datetime.now(timezone.utc),
+                codex_app_server_pid="12345",
+            )
+            orchestrator.state.claimed.add(candidate.id)
+            orchestrator.state.worker_futures[candidate.id] = Future()
+            orchestrator.schedule_retry(candidate, attempt=1, error="failed")
+            orchestrator._persist_state()
+
+            payload_text = state_file.read_text(encoding="utf-8")
+            payload = json.loads(payload_text)
+            self.assertNotIn(secret, payload_text)
+            self.assertNotIn("running", payload)
+            self.assertNotIn("claimed", payload)
+            self.assertNotIn("worker_futures", payload)
+            self.assertNotIn("codex_app_server_pid", payload_text)
 
     def test_startup_terminal_cleanup_handles_multiple_sanitized_and_missing_workspaces(self):
         with tempfile.TemporaryDirectory() as directory:

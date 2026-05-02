@@ -13,6 +13,7 @@ from .agent import AgentRunnerError, CodexAgentRunner
 from .models import Issue, RetryEntry, RunAttemptRecord, RunningEntry, RuntimeConfig, RuntimeState
 from .prompt import render_prompt
 from .runtime_logging import emit_runtime_log
+from .state_persistence import RuntimeStateStore
 from .tracker import IssueTrackerClient, TrackerError
 from .workflow import ConfigValidationError, validate_dispatch_config
 from .workspace import WorkspaceManager
@@ -48,6 +49,8 @@ class Orchestrator:
             poll_interval_ms=config.polling_interval_ms,
             max_concurrent_agents=config.max_concurrent_agents,
         )
+        self.state_store = RuntimeStateStore(config.runtime_state_file, self.logger) if config.runtime_state_file else None
+        self._load_persisted_state()
 
     def apply_reload(self, config: RuntimeConfig, prompt_template: str) -> None:
         with self._lock:
@@ -60,6 +63,8 @@ class Orchestrator:
                 self.tracker.config = config
             if hasattr(self.agent_runner, "config"):
                 self.agent_runner.config = config
+            self.state_store = RuntimeStateStore(config.runtime_state_file, self.logger) if config.runtime_state_file else None
+            self._load_persisted_state()
             emit_runtime_log(
                 self.logger,
                 "config_applied",
@@ -299,6 +304,8 @@ class Orchestrator:
             rate_limits = _rate_limits(event)
             if rate_limits is not None:
                 self.state.codex_rate_limits = rate_limits
+            self.state.session_metadata[issue_id] = self._session_metadata_for_entry(entry)
+        self._persist_state()
 
     def _apply_token_usage_locked(self, entry: RunningEntry, usage: dict[str, int]) -> None:
         input_tokens = usage.get("input_tokens")
@@ -330,6 +337,7 @@ class Orchestrator:
             status=status,
             error=error,
         )
+        self.state.session_metadata[entry.issue.id] = self._session_metadata_for_entry(entry)
 
     @staticmethod
     def _attempt_status_for_error(error: str | None) -> str:
@@ -359,11 +367,13 @@ class Orchestrator:
             continuation=continuation,
             secrets=(self.config.tracker_api_key,),
         )
+        self._persist_state()
 
     def retry_due(self, issue_id: str) -> None:
         retry = self.state.retry_attempts.pop(issue_id, None)
         if not retry:
             return
+        self._persist_state()
         emit_runtime_log(
             self.logger,
             "retry_due",
@@ -389,6 +399,7 @@ class Orchestrator:
                 reason="not_candidate",
                 secrets=(self.config.tracker_api_key,),
             )
+            self._persist_state()
             return
         self.state.claimed.discard(issue_id)
         if self.eligible(issue):
@@ -441,6 +452,7 @@ class Orchestrator:
         cancel_requested = future.cancel() if future and not future.done() else False
         if cleanup:
             self.workspace_manager.cleanup_for_issue(issue.identifier)
+        self._persist_state()
         emit_runtime_log(
             self.logger,
             "reconciliation_stopped",
@@ -479,6 +491,7 @@ class Orchestrator:
             cancelled=cancelled,
             secrets=(self.config.tracker_api_key,),
         )
+        self._persist_state()
 
     def reconcile_stalled(self) -> None:
         if self.config.codex_stall_timeout_ms <= 0:
@@ -639,6 +652,41 @@ class Orchestrator:
         with self._lock:
             entry = self.state.running.get(issue_id)
             return entry.session_id if entry else None
+
+    def _load_persisted_state(self) -> None:
+        if self.state_store is None:
+            return
+        self.state_store.load_into(
+            self.state,
+            persist_retries=self.config.runtime_state_persist_retries,
+            persist_sessions=self.config.runtime_state_persist_sessions,
+        )
+
+    def _persist_state(self) -> None:
+        if self.state_store is None:
+            return
+        with self._lock:
+            self.state_store.save(
+                self.state,
+                persist_retries=self.config.runtime_state_persist_retries,
+                persist_sessions=self.config.runtime_state_persist_sessions,
+            )
+
+    @staticmethod
+    def _session_metadata_for_entry(entry: RunningEntry) -> dict[str, Any]:
+        return {
+            "issue_identifier": entry.issue.identifier,
+            "session_id": entry.session_id,
+            "thread_id": entry.thread_id,
+            "turn_id": entry.turn_id,
+            "turn_count": entry.turn_count,
+            "last_codex_event": entry.last_codex_event,
+            "last_codex_timestamp": entry.last_codex_timestamp.isoformat() if entry.last_codex_timestamp else None,
+            "last_codex_message": entry.last_codex_message,
+            "codex_input_tokens": entry.codex_input_tokens,
+            "codex_output_tokens": entry.codex_output_tokens,
+            "codex_total_tokens": entry.codex_total_tokens,
+        }
 
 
 class Submitter(Protocol):

@@ -16,10 +16,12 @@ class RuntimeDocsTests(unittest.TestCase):
             "harness/runtime/workspace.py",
             "harness/runtime/agent.py",
             "harness/runtime/tracker.py",
+            "harness/runtime/state_persistence.py",
             "tests/runtime/test_workflow.py",
             "tests/runtime/test_orchestrator.py",
             "tests/runtime/test_tracker.py",
             "tests/runtime/test_codex_schema.py",
+            "tests/runtime/test_state_persistence.py",
         ):
             self.assertIn(reference, text)
 
@@ -108,9 +110,20 @@ class RuntimeDocsTests(unittest.TestCase):
         text = todo.read_text(encoding="utf-8")
         self.assertIn("## Future Recommended Extensions", text)
         for item in (
-            "Persist retry queue and session metadata",
+            "- [x] Persist retry queue and session metadata",
             "first-class tracker write APIs",
             "pluggable issue tracker adapters beyond Linear",
             "schema-backed `linear_graphql` startup advertisement",
         ):
             self.assertIn(item, text)
+
+    def test_runtime_state_persistence_is_documented(self):
+        root = Path(__file__).resolve().parent.parent
+        runtime_readme = (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8")
+        runbooks = (root / "docs" / "runtime" / "runbooks.md").read_text(encoding="utf-8")
+        for text in (runtime_readme, runbooks):
+            self.assertIn("runtime_state.file", text)
+            self.assertIn("runtime_state.persist_retries", text)
+            self.assertIn("runtime_state.persist_sessions", text)
+        self.assertIn("runtime_state_load_failed", runbooks)
+        self.assertIn("runtime_state_save_failed", runbooks)

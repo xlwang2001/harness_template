@@ -38,6 +38,7 @@ Use this table to choose the first recovery action.
 | No new work dispatches | Dispatch preflight failure, no active candidates, blockers, or concurrency exhausted | Check logs for `dispatch_preflight_failed`, then inspect active states and `max_concurrent_agents`. |
 | Running work stops after tracker edit | Issue became terminal or non-active | Confirm the tracker state change was intentional; terminal states clean workspaces, non-active states preserve them. |
 | Repeated retries | Codex failure, hook failure, timeout, or tracker candidate fetch issue | Check latest run attempt status and retry error through `/api/v1/<issue_identifier>`. |
+| Retries disappear after restart | No `runtime_state.file` configured, or retry persistence disabled | Configure `runtime_state.file` if retry/session metadata should survive operator restarts. |
 | Workspace hook hangs | Hook timeout too high or shell command waiting for input | Keep hooks non-interactive and tune `hooks.timeout_ms`. |
 | User input requested by Codex | Runtime policy treats user input required as a run failure | Update the issue or repository instructions so the agent can proceed without waiting. |
 
@@ -69,3 +70,15 @@ Use this when `SPEC.md`, the targeted Codex app-server protocol, or Linear behav
 7. For production readiness, follow `docs/runtime/production-readiness-checklist.md`, including the gated integration profile and Codex schema verification when applicable.
 
 Do not use upstream Symphony implementation code as the runtime path. Upstream links and skills can remain reference material, while behavior should be implemented and tested in this repository.
+
+## Durable Runtime State
+
+Use this when operators need retry timers and latest session metadata to survive process restarts.
+
+1. Add `runtime_state.file` to `WORKFLOW.md`; relative paths resolve from the workflow file directory.
+2. Leave `runtime_state.persist_retries` and `runtime_state.persist_sessions` unset for the default enabled behavior, or set either to `false` for memory-only operation.
+3. Treat the state file as scheduler metadata, not a source of live ownership. Restarted processes never restore `running`, `claimed`, worker futures, or process handles.
+4. If logs show `runtime_state_load_failed`, inspect the JSON file and either repair it or move it aside so the runtime can rebuild state from tracker polling.
+5. If logs show `runtime_state_save_failed`, check parent directory permissions and disk space. The runtime continues, but future restarts may lose retry/session metadata.
+
+The state file must not contain raw tracker API keys or workflow secret values. If you need to share it for debugging, still treat issue titles, messages, and paths as potentially sensitive project metadata.

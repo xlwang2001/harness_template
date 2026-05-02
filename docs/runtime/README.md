@@ -23,6 +23,8 @@ The optional status API is disabled by default. Enable it with `server.port` in 
 
 Runtime logs are structured `key=value` records from the `harness.runtime` logger. Configure sinks in `WORKFLOW.md` with `logging.level` (`DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`), `logging.console` (default `true`), and optional `logging.file`. Relative log file paths resolve from the workflow directory. Valid workflow reloads reconfigure harness-owned log handlers without removing external handlers; file sink failures are logged as `log_sink_failed` warnings and do not stop orchestration.
 
+Optional durable runtime state can persist scheduler-safe metadata across process restarts. Configure it with `runtime_state.file`, which resolves relative to `WORKFLOW.md`. When a file is configured, `runtime_state.persist_retries` and `runtime_state.persist_sessions` default to `true`; set either to `false` to keep that part memory-only. The state file stores retry entries, latest run-attempt records, completed issue IDs, aggregate Codex token/rate-limit state, and last known session metadata. It does not store live workers, claimed ownership, process handles, raw tracker tokens, or workflow secrets. Missing, corrupt, or unwritable state files emit `runtime_state_load_failed` or `runtime_state_save_failed` warnings and do not stop orchestration.
+
 ## Real Integration Profile
 
 The real integration profile is opt-in production-readiness smoke coverage. Normal CI and `make test` discover the tests but skip them unless `HARNESS_RUN_INTEGRATION=1` is set.

@@ -193,9 +193,11 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
     agent = _map(config.get("agent"))
     codex = _map(config.get("codex"))
     logging_config = _map(config.get("logging"))
+    runtime_state = _map(config.get("runtime_state"))
     raw_server = config.get("server")
     server = _map(raw_server)
     server_port_present = isinstance(raw_server, dict) and "port" in raw_server
+    runtime_state_file = _optional_resolved_path(runtime_state.get("file"), workflow.path.parent)
 
     tracker_kind = str(tracker.get("kind") or "linear")
     if tracker_kind != "linear":
@@ -242,6 +244,9 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
         logging_level=_logging_level(logging_config.get("level")),
         logging_console=_bool(logging_config.get("console"), True),
         logging_file=_optional_resolved_path(logging_config.get("file"), workflow.path.parent),
+        runtime_state_file=runtime_state_file,
+        runtime_state_persist_retries=_bool(runtime_state.get("persist_retries"), runtime_state_file is not None),
+        runtime_state_persist_sessions=_bool(runtime_state.get("persist_sessions"), runtime_state_file is not None),
     )
 
 
