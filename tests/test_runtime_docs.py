@@ -27,3 +27,19 @@ class RuntimeDocsTests(unittest.TestCase):
         todo = root / "docs" / "runtime" / "spec-conformance-todo.md"
         text = todo.read_text(encoding="utf-8")
         self.assertIn("- [x] Add a runtime conformance matrix mapped to upstream SPEC sections.", text)
+
+    def test_runtime_runbooks_cover_operator_topics(self):
+        root = Path(__file__).resolve().parent.parent
+        runbooks = root / "docs" / "runtime" / "runbooks.md"
+        self.assertTrue(runbooks.is_file())
+        text = runbooks.read_text(encoding="utf-8")
+        for heading in (
+            "## Workspace Cleanup",
+            "## Logs And Observability",
+            "## Failure Modes",
+            "## Dashboard And API Operation",
+            "## SPEC Compatibility Upgrades",
+        ):
+            self.assertIn(heading, text)
+        self.assertIn("docs/runtime/runbooks.md", (root / "docs" / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("docs/runtime/runbooks.md", (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8"))

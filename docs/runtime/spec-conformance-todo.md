@@ -66,6 +66,6 @@
 - [x] Improve observability conformance for session IDs in lifecycle logs, dashboard state rendering, and status-surface failure isolation.
 - [x] Tighten `linear_graphql` to the documented query/mutation extension surface by rejecting subscriptions.
 - [x] Implement true in-worker continuation turns on the same live Codex thread up to `agent.max_turns`.
-- [ ] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
+- [x] Add local runbooks for workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 - [ ] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.
 - [ ] Add release notes and compatibility policy for generated target repos.
