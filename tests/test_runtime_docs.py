@@ -45,6 +45,27 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("docs/runtime/runbooks.md", (root / "docs" / "README.md").read_text(encoding="utf-8"))
         self.assertIn("docs/runtime/runbooks.md", (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8"))
 
+    def test_production_readiness_checklist_exists_and_is_linked(self):
+        root = Path(__file__).resolve().parent.parent
+        checklist = root / "docs" / "runtime" / "production-readiness-checklist.md"
+        self.assertTrue(checklist.is_file())
+        text = checklist.read_text(encoding="utf-8")
+        for expected in (
+            "make integration-test",
+            "make codex-schema-test",
+            "HARNESS_RUN_INTEGRATION=1",
+            "Codex app-server",
+            "read-only",
+        ):
+            self.assertIn(expected, text)
+        for doc in (
+            root / "docs" / "README.md",
+            root / "docs" / "maintaining-this-scaffold.md",
+            root / "docs" / "runtime" / "README.md",
+            root / "docs" / "runtime" / "runbooks.md",
+        ):
+            self.assertIn("docs/runtime/production-readiness-checklist.md", doc.read_text(encoding="utf-8"))
+
     def test_template_upgrade_and_release_policies_exist_and_are_linked(self):
         root = Path(__file__).resolve().parent.parent
         upgrade = root / "docs" / "template-upgrade-policy.md"
@@ -71,8 +92,8 @@ class RuntimeDocsTests(unittest.TestCase):
         text = todo.read_text(encoding="utf-8")
         self.assertIn("## Prioritized Remaining Hardening", text)
         self.assertIn("- [x] P0: Expand the gated real integration profile", text)
+        self.assertIn("- [x] P1: Add a production-readiness checklist", text)
         for item in (
-            "- [ ] P1: Add a production-readiness checklist",
             "- [ ] P2: Add configurable runtime log sinks",
             "- [ ] P3: Revisit `linear_graphql` startup advertisement",
         ):

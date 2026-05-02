@@ -64,6 +64,6 @@ Use this when `SPEC.md`, the targeted Codex app-server protocol, or Linear behav
 4. Keep Codex protocol envelope changes inside `harness/runtime/agent.py`.
 5. Keep Linear GraphQL shape and error mapping changes inside `harness/runtime/tracker.py` or the `linear_graphql` client tool.
 6. Run `make test`, `make validate`, `make stale-design-check`, and `git diff --check`.
-7. For production readiness, run the gated real integration profile with explicit credentials.
+7. For production readiness, follow `docs/runtime/production-readiness-checklist.md`, including the gated integration profile and Codex schema verification when applicable.
 
 Do not use upstream Symphony implementation code as the runtime path. Upstream links and skills can remain reference material, while behavior should be implemented and tested in this repository.

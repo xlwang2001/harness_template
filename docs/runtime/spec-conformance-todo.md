@@ -79,6 +79,6 @@
 ## Prioritized Remaining Hardening
 
 - [x] P0: Expand the gated real integration profile with service-loop, restart, workspace reuse, terminal cleanup, failure-recovery, and read-only Linear coverage while keeping default CI credential-free.
-- [ ] P1: Add a production-readiness checklist that tells operators when to run `make integration-test` and `make codex-schema-test`, especially during Codex app-server upgrades.
+- [x] P1: Add a production-readiness checklist that tells operators when to run `make integration-test` and `make codex-schema-test`, especially during Codex app-server upgrades.
 - [ ] P2: Add configurable runtime log sinks or richer status surfaces if operator needs exceed the current structured logs and loopback status API.
 - [ ] P3: Revisit `linear_graphql` startup advertisement only if the targeted generated Codex schema adds a stable dynamic-tool advertisement field.

@@ -44,6 +44,8 @@ Set `HARNESS_INTEGRATION_CODEX_COMMAND` to run the Codex app-server smoke agains
 
 Runtime operator procedures live in `docs/runtime/runbooks.md`. They cover workspace cleanup, logs, failure modes, dashboard/API operation, and SPEC compatibility upgrades.
 
+Use `docs/runtime/production-readiness-checklist.md` before first production use and whenever Codex app-server, Linear configuration, workflow dispatch policy, or runtime templates change.
+
 ## Workflow Front Matter Subset
 
 The standard-library parser intentionally supports a documented YAML subset: nested maps by indentation, lists with `- ` items, quoted or unquoted scalars, integers, booleans, null values, comments, blank lines, and `|` block scalars. Unsupported YAML features should fail parsing instead of being guessed. This subset covers scaffold `WORKFLOW.md` templates while keeping dependency policy explicit.

@@ -23,6 +23,7 @@ Every release note should call out:
 - template files added, removed, renamed, or substantially rewritten;
 - validator changes, especially new errors;
 - runtime workflow config changes, defaults, or deprecations;
+- production-readiness verification status, including whether `make integration-test` and `make codex-schema-test` were run when applicable;
 - manual adoption steps for existing generated repositories;
 - breaking changes that require a major version.
 
