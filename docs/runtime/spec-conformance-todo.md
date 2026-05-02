@@ -89,3 +89,11 @@
 - [x] Add first-class tracker write APIs for comments, state transitions, or PR metadata when orchestration should own those writes.
 - [x] Defer pluggable issue tracker adapters beyond Linear for Linear-only deployments.
 - [ ] Implement schema-backed `linear_graphql` startup advertisement if the targeted generated Codex schema adds a stable client-tool advertisement field.
+
+## Optimization Backlog
+
+- [ ] Priority 1: Add a human-facing runtime support matrix and link it from adoption/runtime/readiness docs.
+- [ ] Priority 2: Add a read-only dispatch preview command for candidate eligibility, sort order, prompt preview, and workspace paths.
+- [ ] Priority 3: Make review packets machine-checkable with Markdown guidance, optional JSON schema validation, and PR/template language.
+- [ ] Priority 4: Add a complete adopted tiny CLI target-repo example with sample issue and review packet.
+- [ ] Priority 5: Make the `WORKFLOW.md` YAML subset visible in templates/docs and warn on unsupported YAML constructs.
