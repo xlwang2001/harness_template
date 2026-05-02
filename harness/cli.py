@@ -11,6 +11,7 @@ from .agents_validator import validate_agents
 from .docs_validator import validate_docs
 from .project_profiles import PROFILES, get_profile
 from .runtime import RuntimeService, RuntimeServiceError
+from .runtime.preview import build_dispatch_preview, format_dispatch_preview
 from .templates import copy_templates
 from .workflow_validator import validate_workflow
 
@@ -35,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--port", type=_nonnegative_int, help="enable the status API on PORT; overrides workflow server.port")
     run_parser.add_argument("--workflow", dest="workflow_option", type=Path, help=argparse.SUPPRESS)
     run_parser.set_defaults(func=cmd_run)
+
+    preview_parser = subcommands.add_parser("dispatch-preview", help="preview read-only candidate dispatch decisions")
+    preview_parser.add_argument("--workflow", required=True, type=Path, help="path to WORKFLOW.md")
+    preview_parser.add_argument("--limit", type=_positive_int, default=10, help="maximum candidates to preview")
+    preview_parser.set_defaults(func=cmd_dispatch_preview)
 
     runtime_check_parser = subcommands.add_parser("runtime-check", help="run runtime conformance unit tests")
     runtime_check_parser.set_defaults(func=cmd_runtime_check)
@@ -86,6 +92,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_dispatch_preview(args: argparse.Namespace) -> int:
+    workflow = args.workflow.resolve()
+    if not workflow.is_file():
+        print(f"workflow file not found: {workflow}", file=sys.stderr)
+        return 2
+    try:
+        preview = build_dispatch_preview(workflow, limit=args.limit)
+    except Exception as exc:
+        print(f"dispatch preview failed: {exc}", file=sys.stderr)
+        return 1
+    print(format_dispatch_preview(preview))
+    return 1 if preview.has_errors else 0
+
+
 def cmd_runtime_check(args: argparse.Namespace) -> int:
     completed = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests/runtime"])
     return int(completed.returncode)
@@ -98,6 +118,16 @@ def _nonnegative_int(value: str) -> int:
         raise argparse.ArgumentTypeError("port must be a non-negative integer") from exc
     if parsed < 0:
         raise argparse.ArgumentTypeError("port must be a non-negative integer")
+    return parsed
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("limit must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("limit must be a positive integer")
     return parsed
 
 

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import harness.cli as cli_module
 from harness.cli import main
+from harness.runtime.models import Issue, RuntimeConfig
+from harness.runtime.preview import DispatchPreview, CandidatePreview
 
 
 def run_cli(args):
@@ -125,6 +127,77 @@ Work on {{ issue.identifier }}
     def test_run_rejects_negative_port(self):
         with self.assertRaises(SystemExit):
             run_cli(["run", "--port", "-1"])
+
+    def test_dispatch_preview_prints_read_only_preview(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / "WORKFLOW.md"
+            workflow.write_text("Work", encoding="utf-8")
+            calls = []
+
+            def fake_build(workflow_path, *, limit):
+                calls.append((workflow_path, limit))
+                cfg = RuntimeConfig(
+                    workflow_path=workflow_path,
+                    tracker_kind="linear",
+                    tracker_endpoint="https://api.linear.app/graphql",
+                    tracker_api_key="token",
+                    tracker_project_slug="project",
+                    active_states=("Todo",),
+                    terminal_states=("Done",),
+                    polling_interval_ms=30000,
+                    workspace_root=Path(directory) / ".workspaces",
+                    hooks={"after_create": None, "before_run": None, "after_run": None, "before_remove": None},
+                    hooks_timeout_ms=1000,
+                    max_concurrent_agents=1,
+                    max_turns=20,
+                    max_retry_backoff_ms=300000,
+                    max_concurrent_agents_by_state={},
+                    codex_command="true",
+                    codex_turn_timeout_ms=1000,
+                    codex_read_timeout_ms=1000,
+                    codex_stall_timeout_ms=300000,
+                    approval_policy="on-request",
+                    thread_sandbox="workspace-write",
+                    turn_sandbox_policy="workspace-write",
+                )
+                issue = Issue(id="abc-1", identifier="ABC-1", title="Preview issue", state="Todo")
+                return DispatchPreview(
+                    workflow_path=workflow_path,
+                    config=cfg,
+                    candidates=[
+                        CandidatePreview(
+                            issue=issue,
+                            eligible=True,
+                            reason="eligible",
+                            workspace_path=cfg.workspace_root / "ABC-1",
+                            prompt_preview="Work on ABC-1",
+                            prompt_error=None,
+                        )
+                    ],
+                )
+
+            original = cli_module.build_dispatch_preview
+            try:
+                cli_module.build_dispatch_preview = fake_build
+                code, stdout, stderr = run_cli(["dispatch-preview", "--workflow", str(workflow), "--limit", "5"])
+            finally:
+                cli_module.build_dispatch_preview = original
+
+            self.assertEqual(code, 0)
+            self.assertEqual(stderr, "")
+            self.assertEqual(calls, [(workflow.resolve(), 5)])
+            self.assertIn("ABC-1 - Preview issue", stdout)
+            self.assertIn("eligible: yes", stdout)
+
+    def test_dispatch_preview_reports_missing_workflow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            code, _, stderr = run_cli(["dispatch-preview", "--workflow", str(Path(directory) / "missing.md")])
+            self.assertEqual(code, 2)
+            self.assertIn("workflow file not found", stderr)
+
+    def test_dispatch_preview_rejects_non_positive_limit(self):
+        with self.assertRaises(SystemExit):
+            run_cli(["dispatch-preview", "--workflow", "WORKFLOW.md", "--limit", "0"])
 
     def test_runtime_check_runs_runtime_unittest_discovery(self):
         calls = []

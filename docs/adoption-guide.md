@@ -39,6 +39,16 @@ python -m harness.cli validate --target /path/to/your/repo
 
 Fix errors before running the hardened runtime.
 
+## Preview Dispatch
+
+Before the first live run, preview candidate selection without creating workspaces or launching Codex:
+
+```bash
+python -m harness.cli dispatch-preview --workflow /path/to/your/repo/WORKFLOW.md
+```
+
+Confirm the eligible issues, skipped reasons, prompt preview, and workspace paths match the intended project policy.
+
 ## First Smoke Test
 
 Create a low-risk issue such as: "Update docs/README.md to add one sentence explaining the local development command." Confirm that the runtime creates a workspace, starts Codex, produces a PR or patch, and leaves a review packet.

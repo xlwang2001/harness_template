@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0
+
+Dispatch preview release.
+
+### Added
+
+- Added `harness dispatch-preview --workflow WORKFLOW.md [--limit N]` for read-only candidate dispatch previews.
+- Preview output includes resolved config, candidate order, eligibility reasons, workspace paths, and truncated prompt previews without creating workspaces, launching Codex, or mutating tracker state.
+- Documented dispatch preview in the adoption guide and runtime runbooks.
+
+### Verification
+
+- Default tests remain credential-free; real Linear use is still read-only unless a separately gated mutation profile is implemented later.
+
 ## 1.0.1
 
 Runtime support matrix release.

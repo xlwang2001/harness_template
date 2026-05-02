@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.1.0",
+            "Dispatch preview release",
             "## 1.0.1",
             "Runtime support matrix release",
             "## 1.0.0",
@@ -111,8 +113,8 @@ class RuntimeDocsTests(unittest.TestCase):
     def test_package_version_is_1_0_0(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.0.1")
-        self.assertEqual(harness.__version__, "1.0.1")
+        self.assertEqual(pyproject["project"]["version"], "1.1.0")
+        self.assertEqual(harness.__version__, "1.1.0")
 
     def test_runtime_support_matrix_exists_and_is_linked(self):
         root = Path(__file__).resolve().parent.parent
@@ -141,7 +143,8 @@ class RuntimeDocsTests(unittest.TestCase):
         todo = (root / "docs" / "runtime" / "spec-conformance-todo.md").read_text(encoding="utf-8")
         self.assertIn("## Optimization Backlog", todo)
         self.assertIn("- [x] Priority 1: Add a human-facing runtime support matrix", todo)
-        self.assertIn("- [ ] Priority 2: Add a read-only dispatch preview command", todo)
+        self.assertIn("- [x] Priority 2: Add a read-only dispatch preview command", todo)
+        self.assertIn("- [ ] Priority 3: Make review packets machine-checkable", todo)
 
     def test_readme_describes_1_0_status_not_early_stage(self):
         root = Path(__file__).resolve().parent.parent

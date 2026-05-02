@@ -44,6 +44,16 @@ Use this table to choose the first recovery action.
 
 When in doubt, pause dispatch by making active states empty or moving candidate issues out of active states, then inspect logs and workspaces before restarting.
 
+## Dispatch Preview
+
+Use this before first live dispatch or after changing active states, blocker conventions, concurrency, workspace roots, or prompt content.
+
+```sh
+python -m harness.cli dispatch-preview --workflow WORKFLOW.md
+```
+
+The preview loads runtime config, fetches candidates, computes eligibility and dispatch order, renders a truncated prompt preview, and shows the workspace path that would be used. It does not create workspaces, start Codex, or mutate tracker state.
+
 ## Tracker Write APIs
 
 Use this when a workflow or operator tool should own a Linear mutation instead of asking the coding agent to update the issue.
