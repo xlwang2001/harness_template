@@ -10,6 +10,7 @@ from pathlib import Path
 from .agents_validator import validate_agents
 from .docs_validator import validate_docs
 from .project_profiles import PROFILES, get_profile
+from .review_packet_validator import validate_review_packet
 from .runtime import RuntimeService, RuntimeServiceError
 from .runtime.preview import build_dispatch_preview, format_dispatch_preview
 from .templates import copy_templates
@@ -41,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
     preview_parser.add_argument("--workflow", required=True, type=Path, help="path to WORKFLOW.md")
     preview_parser.add_argument("--limit", type=_positive_int, default=10, help="maximum candidates to preview")
     preview_parser.set_defaults(func=cmd_dispatch_preview)
+
+    review_parser = subcommands.add_parser("validate-review-packet", help="validate a review packet artifact")
+    review_parser.add_argument("--path", required=True, type=Path)
+    review_parser.set_defaults(func=cmd_validate_review_packet)
 
     runtime_check_parser = subcommands.add_parser("runtime-check", help="run runtime conformance unit tests")
     runtime_check_parser.set_defaults(func=cmd_runtime_check)
@@ -104,6 +109,19 @@ def cmd_dispatch_preview(args: argparse.Namespace) -> int:
         return 1
     print(format_dispatch_preview(preview))
     return 1 if preview.has_errors else 0
+
+
+def cmd_validate_review_packet(args: argparse.Namespace) -> int:
+    path = args.path.resolve()
+    messages = validate_review_packet(path)
+    for message in messages:
+        print(message.format(path.parent))
+    errors = [message for message in messages if message.level == "ERROR"]
+    if errors:
+        print(f"review packet validation failed with {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("review packet validation passed")
+    return 0
 
 
 def cmd_runtime_check(args: argparse.Namespace) -> int:

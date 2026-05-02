@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.2.0",
+            "Machine-checkable review packet release",
             "## 1.1.0",
             "Dispatch preview release",
             "## 1.0.1",
@@ -113,8 +115,8 @@ class RuntimeDocsTests(unittest.TestCase):
     def test_package_version_is_1_0_0(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.1.0")
-        self.assertEqual(harness.__version__, "1.1.0")
+        self.assertEqual(pyproject["project"]["version"], "1.2.0")
+        self.assertEqual(harness.__version__, "1.2.0")
 
     def test_runtime_support_matrix_exists_and_is_linked(self):
         root = Path(__file__).resolve().parent.parent
@@ -144,7 +146,19 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("## Optimization Backlog", todo)
         self.assertIn("- [x] Priority 1: Add a human-facing runtime support matrix", todo)
         self.assertIn("- [x] Priority 2: Add a read-only dispatch preview command", todo)
-        self.assertIn("- [ ] Priority 3: Make review packets machine-checkable", todo)
+        self.assertIn("- [x] Priority 3: Make review packets machine-checkable", todo)
+        self.assertIn("- [ ] Priority 4: Add a complete adopted tiny CLI target-repo example", todo)
+
+    def test_review_packet_templates_and_docs_exist(self):
+        root = Path(__file__).resolve().parent.parent
+        template = root / "templates" / "repo" / "docs" / "review-packet-template.md"
+        schema = root / "templates" / "repo" / "docs" / "generated" / "review-packet.schema.json"
+        skill = root / "templates" / "repo" / ".agents" / "skills" / "review-packet" / "SKILL.md"
+        pr_template = root / "templates" / "repo" / ".github" / "pull_request_template.md"
+        self.assertTrue(template.is_file())
+        self.assertTrue(schema.is_file())
+        self.assertIn("validate-review-packet", skill.read_text(encoding="utf-8"))
+        self.assertIn("Review packet path", pr_template.read_text(encoding="utf-8"))
 
     def test_readme_describes_1_0_status_not_early_stage(self):
         root = Path(__file__).resolve().parent.parent

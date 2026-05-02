@@ -199,6 +199,41 @@ Work on {{ issue.identifier }}
         with self.assertRaises(SystemExit):
             run_cli(["dispatch-preview", "--workflow", "WORKFLOW.md", "--limit", "0"])
 
+    def test_validate_review_packet_accepts_markdown_packet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "review-packet.md"
+            path.write_text(
+                """# Review Packet: ABC-1
+
+## Issue
+## Pull Request
+## Summary
+## Changed files
+## Tests run
+## CI status
+## Known risks
+## Human review checklist
+""",
+                encoding="utf-8",
+            )
+
+            code, stdout, stderr = run_cli(["validate-review-packet", "--path", str(path)])
+
+            self.assertEqual(code, 0)
+            self.assertIn("review packet validation passed", stdout)
+            self.assertEqual(stderr, "")
+
+    def test_validate_review_packet_reports_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "review-packet.md"
+            path.write_text("# Review Packet\n", encoding="utf-8")
+
+            code, stdout, stderr = run_cli(["validate-review-packet", "--path", str(path)])
+
+            self.assertEqual(code, 1)
+            self.assertIn("missing section", stdout)
+            self.assertIn("review packet validation failed", stderr)
+
     def test_runtime_check_runs_runtime_unittest_discovery(self):
         calls = []
 

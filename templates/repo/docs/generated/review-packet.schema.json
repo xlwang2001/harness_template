@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness Review Packet",
+  "type": "object",
+  "required": ["issue", "pull_request", "summary", "changed_files", "tests", "ci", "artifacts", "risks", "follow_ups"],
+  "properties": {
+    "issue": {
+      "type": "object",
+      "required": ["identifier", "title", "url"],
+      "properties": {
+        "identifier": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "required": ["url", "status"],
+      "properties": {
+        "url": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 }
+      }
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "changed_files": { "type": "array", "items": { "type": "string" } },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["command", "result"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "result": { "type": "string", "minLength": 1 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "minLength": 1 },
+        "url": { "type": "string" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["screenshots", "videos", "logs", "metrics"],
+      "properties": {
+        "screenshots": { "type": "array", "items": { "type": "string" } },
+        "videos": { "type": "array", "items": { "type": "string" } },
+        "logs": { "type": "array", "items": { "type": "string" } },
+        "metrics": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "follow_ups": { "type": "array", "items": { "type": "string" } }
+  }
+}

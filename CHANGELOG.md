@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0
+
+Machine-checkable review packet release.
+
+### Added
+
+- Added review packet Markdown and JSON schema templates for generated target repositories.
+- Added `harness validate-review-packet --path PATH` for Markdown section checks and optional sibling JSON validation.
+- Updated the review-packet skill, PR template, and review guide to point humans and agents at the review packet contract.
+
+### Verification
+
+- Review packet validation is opt-in and does not make ordinary scaffold validation require completed packets.
+
 ## 1.1.0
 
 Dispatch preview release.

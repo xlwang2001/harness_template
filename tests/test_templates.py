@@ -11,6 +11,8 @@ class TemplateTests(unittest.TestCase):
         self.assertIn("AGENTS.md", names)
         self.assertIn("WORKFLOW.md", names)
         self.assertIn("docs/README.md", relative_names)
+        self.assertIn("docs/review-packet-template.md", relative_names)
+        self.assertIn("docs/generated/review-packet.schema.json", relative_names)
 
     def test_profile_rendering(self):
         profile = get_profile("toy-example")
