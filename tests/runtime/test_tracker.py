@@ -103,6 +103,17 @@ class TrackerTests(unittest.TestCase):
             self.assertEqual(client.fetch_issues_by_states([]), [])
             graphql.assert_not_called()
 
+    def test_fetch_issues_by_states_uses_project_slug_and_terminal_states(self):
+        client = LinearClient(config(tracker_project_slug="proj-slug"))
+        payload = {"data": {"issues": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}}}
+        with patch.object(client, "_graphql", return_value=payload) as graphql:
+            self.assertEqual(client.fetch_issues_by_states(["Done", "Cancelled"]), [])
+
+        query, variables = graphql.call_args.args
+        self.assertIn("IssuesByStates", query)
+        self.assertEqual(variables["projectSlug"], "proj-slug")
+        self.assertEqual(variables["states"], ["Done", "Cancelled"])
+
     def test_pagination_preserves_order(self):
         class PagingClient(LinearClient):
             def __init__(self):

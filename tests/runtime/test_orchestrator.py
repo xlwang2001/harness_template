@@ -60,6 +60,7 @@ class FakeTracker:
         self.candidate_fetches = 0
         self.state_fetches = 0
         self.terminal_fetches = 0
+        self.terminal_state_names = []
 
     def fetch_candidate_issues(self):
         self.candidate_fetches += 1
@@ -67,6 +68,7 @@ class FakeTracker:
 
     def fetch_issues_by_states(self, state_names):
         self.terminal_fetches += 1
+        self.terminal_state_names.append(tuple(state_names))
         return list(self.terminal)
 
     def fetch_issue_states_by_ids(self, issue_ids):
@@ -708,6 +710,142 @@ class OrchestratorTests(unittest.TestCase):
             workspace = orchestrator.workspace_manager.create_for_issue(done.identifier)
             orchestrator.startup_terminal_cleanup()
             self.assertFalse(workspace.path.exists())
+
+    def test_restart_recovery_starts_with_empty_runtime_state_and_reuses_preserved_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-37", state="Todo")
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {
+                        "after_create": "printf created > marker.txt",
+                        "before_run": None,
+                        "after_run": None,
+                        "before_remove": None,
+                    },
+                }
+            )
+            first = Orchestrator(cfg, FakeTracker(), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            workspace = first.workspace_manager.create_for_issue(candidate.identifier)
+            (workspace.path / "marker.txt").write_text("preserved", encoding="utf-8")
+            first.state.running[candidate.id] = RunningEntry(issue=candidate, started_at=datetime.now(timezone.utc), workspace_path=workspace.path)
+            first.schedule_retry(candidate, attempt=4, error="old process")
+
+            runner = FakeRunner()
+            restarted = Orchestrator(cfg, FakeTracker(candidates=[candidate]), WorkspaceManager(cfg), runner, "Work", executor=InlineExecutor())
+
+            self.assertEqual(restarted.state.running, {})
+            self.assertEqual(restarted.state.retry_attempts, {})
+            self.assertEqual(restarted.state.claimed, set())
+
+            restarted.tick_once()
+
+            self.assertEqual((workspace.path / "marker.txt").read_text(encoding="utf-8"), "preserved")
+            self.assertEqual(len(runner.prompts), 1)
+            self.assertEqual(runner.prompts[0][2], workspace.path)
+
+    def test_startup_terminal_cleanup_handles_multiple_sanitized_and_missing_workspaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            terminal = [
+                issue("ABC/unsafe one", state="Done"),
+                issue("ABC unsafe two", state="Cancelled"),
+                issue("ABC missing", state="Done"),
+            ]
+            cfg = RuntimeConfig(
+                **{
+                    **config(root).__dict__,
+                    "hooks": {
+                        "after_create": None,
+                        "before_run": None,
+                        "after_run": None,
+                        "before_remove": "printf \"$PWD\\n\" >> ../removed.txt; exit 1",
+                    },
+                }
+            )
+            orchestrator = Orchestrator(cfg, FakeTracker(terminal=terminal), WorkspaceManager(cfg), FakeRunner(), "Work", executor=InlineExecutor())
+            unsafe_one = orchestrator.workspace_manager.create_for_issue("ABC/unsafe one")
+            unsafe_two = orchestrator.workspace_manager.create_for_issue("ABC unsafe two")
+
+            orchestrator.startup_terminal_cleanup()
+
+            self.assertFalse(unsafe_one.path.exists())
+            self.assertFalse(unsafe_two.path.exists())
+            self.assertFalse((root / "ABC_missing").exists())
+            removed = (root / "removed.txt").read_text(encoding="utf-8")
+            self.assertIn(str(root / "ABC_unsafe_one"), removed)
+            self.assertIn(str(root / "ABC_unsafe_two"), removed)
+
+    def test_startup_terminal_cleanup_logs_and_continues_when_one_cleanup_raises(self):
+        class PartiallyFailingWorkspaceManager(WorkspaceManager):
+            def __init__(self, cfg):
+                super().__init__(cfg)
+                self.cleaned = []
+
+            def cleanup_for_issue(self, identifier):
+                if identifier == "ABC-FAIL":
+                    raise RuntimeError("cleanup failed")
+                self.cleaned.append(identifier)
+                return super().cleanup_for_issue(identifier)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = config(root)
+            manager = PartiallyFailingWorkspaceManager(cfg)
+            failing = issue("ABC-FAIL", state="Done")
+            passing = issue("ABC-PASS", state="Done")
+            workspace = manager.create_for_issue(passing.identifier)
+            orchestrator = Orchestrator(cfg, FakeTracker(terminal=[failing, passing]), manager, FakeRunner(), "Work", executor=InlineExecutor())
+
+            orchestrator.startup_terminal_cleanup()
+
+            self.assertFalse(workspace.path.exists())
+            self.assertEqual(manager.cleaned, ["ABC-PASS"])
+
+    def test_reconcile_missing_refreshed_state_stops_without_cleanup_or_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            running = issue("ABC-38", state="In Progress")
+            tracker = FakeTracker(candidates=[running], states=[])
+            executor = QueuedExecutor()
+            orchestrator = Orchestrator(config(root), tracker, WorkspaceManager(config(root)), FakeRunner(), "Work", executor=executor)
+            workspace = orchestrator.workspace_manager.create_for_issue(running.identifier)
+            orchestrator.tick_once()
+            orchestrator.state.running[running.id].workspace_path = workspace.path
+
+            orchestrator.reconcile_running()
+
+            self.assertTrue(workspace.path.exists())
+            self.assertTrue(executor.futures[0].cancelled())
+            self.assertNotIn(running.id, orchestrator.state.running)
+            self.assertNotIn(running.id, orchestrator.state.worker_futures)
+            self.assertNotIn(running.id, orchestrator.state.claimed)
+            self.assertNotIn(running.id, orchestrator.state.retry_attempts)
+            self.assertEqual(orchestrator.state.last_attempts[running.id].status, "canceled_by_reconciliation")
+
+    def test_due_failure_retry_releases_stale_claim_when_candidate_disappears(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = issue("ABC-39")
+            orchestrator, _ = self.build(Path(directory), FakeTracker(candidates=[]))
+            orchestrator.state.claimed.add(candidate.id)
+            orchestrator.schedule_retry(candidate, attempt=3, error="agent failed", continuation=False)
+            orchestrator.state.retry_attempts[candidate.id].due_at_ms = 0
+
+            orchestrator.process_due_retries()
+
+            self.assertNotIn(candidate.id, orchestrator.state.claimed)
+            self.assertNotIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_startup_terminal_cleanup_queries_configured_terminal_states(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tracker = FakeTracker(terminal=[])
+            orchestrator = Orchestrator(config(root), tracker, WorkspaceManager(config(root)), FakeRunner(), "Work", executor=InlineExecutor())
+
+            orchestrator.startup_terminal_cleanup()
+
+            self.assertEqual(tracker.terminal_state_names, [("Done", "Cancelled")])
 
     def test_shutdown_cancels_pending_futures_clears_state_and_preserves_workspace(self):
         with tempfile.TemporaryDirectory() as directory:

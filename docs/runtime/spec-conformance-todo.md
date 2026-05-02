@@ -70,3 +70,8 @@
 - [x] Add `harness upgrade` planning or explicit non-support documentation for updating copied target templates.
 - [x] Add release notes and compatibility policy for generated target repos.
 - [x] Align Codex app-server envelopes with generated schema and add schema verification.
+- [x] Add restart recovery tests proving fresh processes do not restore in-memory running, retry, or session state.
+- [x] Add preserved-workspace reuse tests for active issues after restart.
+- [x] Add terminal cleanup breadth tests for multiple terminal issues, missing workspaces, sanitized identifiers, and hook failure isolation.
+- [x] Add reconciliation and retry cleanup tests for missing refreshed states and stale claims.
+- [x] Add tracker terminal-fetch coverage for startup cleanup query shape.

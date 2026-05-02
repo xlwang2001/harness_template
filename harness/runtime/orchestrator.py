@@ -412,15 +412,21 @@ class Orchestrator:
         except TrackerError as exc:
             emit_runtime_log(self.logger, "reconciliation_failed", level=logging.WARNING, error=exc, secrets=(self.config.tracker_api_key,))
             return
+        seen_issue_ids: set[str] = set()
         for issue in refreshed:
             if issue.id not in self.state.running:
                 continue
+            seen_issue_ids.add(issue.id)
             if self.config.is_terminal_state(issue.state):
                 self.stop_running_issue(issue, cleanup=True)
             elif self.config.is_active_state(issue.state):
                 self.state.running[issue.id].issue = issue
             else:
                 self.stop_running_issue(issue, cleanup=False)
+        for issue_id in [issue_id for issue_id in list(self.state.running) if issue_id not in seen_issue_ids]:
+            entry = self.state.running.get(issue_id)
+            if entry is not None:
+                self.stop_running_issue(entry.issue, cleanup=False)
         emit_runtime_log(self.logger, "reconciliation_completed", running=len(self.state.running), secrets=(self.config.tracker_api_key,))
 
     def stop_running_issue(self, issue: Issue, *, cleanup: bool) -> None:
@@ -491,9 +497,23 @@ class Orchestrator:
         except TrackerError as exc:
             emit_runtime_log(self.logger, "startup_cleanup_failed", level=logging.WARNING, error=exc, secrets=(self.config.tracker_api_key,))
             return
+        cleaned = 0
         for issue in terminal_issues:
-            self.workspace_manager.cleanup_for_issue(issue.identifier)
-        emit_runtime_log(self.logger, "startup_cleanup_completed", cleaned=len(terminal_issues), secrets=(self.config.tracker_api_key,))
+            try:
+                self.workspace_manager.cleanup_for_issue(issue.identifier)
+            except Exception as exc:
+                emit_runtime_log(
+                    self.logger,
+                    "startup_cleanup_issue_failed",
+                    level=logging.WARNING,
+                    issue_id=issue.id,
+                    issue_identifier=issue.identifier,
+                    error=exc,
+                    secrets=(self.config.tracker_api_key,),
+                )
+                continue
+            cleaned += 1
+        emit_runtime_log(self.logger, "startup_cleanup_completed", cleaned=cleaned, secrets=(self.config.tracker_api_key,))
 
     def snapshot(self, *, now: datetime | None = None) -> dict[str, object]:
         now = now or datetime.now(timezone.utc)
