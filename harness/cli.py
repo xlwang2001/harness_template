@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--port", type=_nonnegative_int, help="enable the status API on PORT; overrides workflow server.port")
     run_parser.add_argument("--workflow", dest="workflow_option", type=Path, help=argparse.SUPPRESS)
     run_parser.set_defaults(func=cmd_run)
+
+    runtime_check_parser = subcommands.add_parser("runtime-check", help="run runtime conformance unit tests")
+    runtime_check_parser.set_defaults(func=cmd_runtime_check)
     return parser
 
 
@@ -80,6 +84,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     except RuntimeServiceError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+
+def cmd_runtime_check(args: argparse.Namespace) -> int:
+    completed = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests/runtime"])
+    return int(completed.returncode)
 
 
 def _nonnegative_int(value: str) -> int:

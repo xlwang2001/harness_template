@@ -82,3 +82,10 @@
 - [x] P1: Add a production-readiness checklist that tells operators when to run `make integration-test` and `make codex-schema-test`, especially during Codex app-server upgrades.
 - [x] P2: Add configurable runtime log sinks or richer status surfaces if operator needs exceed the current structured logs and loopback status API.
 - [x] P3: Revisit `linear_graphql` startup advertisement only if the targeted generated Codex schema adds a stable dynamic-tool advertisement field.
+
+## Future Recommended Extensions
+
+- [ ] Persist retry queue and session metadata across process restarts.
+- [ ] Add first-class tracker write APIs for comments, state transitions, or PR metadata when orchestration should own those writes.
+- [ ] Add pluggable issue tracker adapters beyond Linear.
+- [ ] Implement schema-backed `linear_graphql` startup advertisement if the targeted generated Codex schema adds a stable client-tool advertisement field.

@@ -24,6 +24,7 @@ The issue tracker is the control plane. The repository is the knowledge system o
 ```bash
 python -m harness.cli init --target /path/to/your/repo --profile cautious-linear
 python -m harness.cli validate --target /path/to/your/repo
+python -m harness.cli runtime-check
 ```
 
 Then configure `/path/to/your/repo/WORKFLOW.md` and run the hardened runtime:

@@ -74,7 +74,7 @@ This scaffold should **not** do the following in the first version:
 - Become a general-purpose workflow engine.
 - Force one universal security posture across all teams.
 - Replace human review.
-- Hide the fact that Symphony is an reference implementation and should be hardened before unattended use.
+- Hide the fact that upstream Symphony materials are references and that this runtime should be hardened before unattended use.
 - Implement Superteam’s rigid planning/execution/review role split as the primary philosophy.
 
 ---
@@ -268,9 +268,9 @@ Important: the target project owns copied files after adoption. This scaffold ve
 
 ## 6. Implementation phases
 
-### Phase 0 — Upstream pinning and design decisions
+### Phase 0 — SPEC reference and design decisions
 
-Goal: create the scaffold repo and formalize the reuse strategy.
+Goal: create the scaffold repo and formalize the SPEC-compatible runtime strategy.
 
 Tasks:
 
@@ -666,7 +666,7 @@ The scaffold reaches v1 when:
    - trust and safety guide.
 6. It has at least one example project.
 7. It has CI that validates the scaffold itself.
-8. It documents the Symphony update process.
+8. It documents the SPEC compatibility process.
 9. It clearly states the trusted-environment assumption and non-goals.
 10. A new project can adopt it in under one hour.
 

@@ -85,6 +85,10 @@ class RuntimeDocsTests(unittest.TestCase):
         plan = (root / "symphony-harness-engineering-scaffold-plan.md").read_text(encoding="utf-8")
         self.assertIn("does not provide automatic in-place template upgrades", plan)
         self.assertNotIn("through `harness upgrade`, not silently", plan)
+        self.assertIn("### Phase 0 — SPEC reference and design decisions", plan)
+        self.assertIn("SPEC compatibility process", plan)
+        self.assertNotIn("Upstream pinning", plan)
+        self.assertNotIn("Symphony is an reference implementation", plan)
 
     def test_conformance_todo_tracks_prioritized_remaining_hardening(self):
         root = Path(__file__).resolve().parent.parent
@@ -95,4 +99,18 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("- [x] P1: Add a production-readiness checklist", text)
         self.assertIn("- [x] P2: Add configurable runtime log sinks", text)
         self.assertIn("- [x] P3: Revisit `linear_graphql` startup advertisement", text)
-        self.assertNotIn("- [ ] P", text)
+        prioritized = text.split("## Prioritized Remaining Hardening", 1)[1].split("## Future Recommended Extensions", 1)[0]
+        self.assertNotIn("- [ ] P", prioritized)
+
+    def test_conformance_todo_tracks_future_recommended_extensions(self):
+        root = Path(__file__).resolve().parent.parent
+        todo = root / "docs" / "runtime" / "spec-conformance-todo.md"
+        text = todo.read_text(encoding="utf-8")
+        self.assertIn("## Future Recommended Extensions", text)
+        for item in (
+            "Persist retry queue and session metadata",
+            "first-class tracker write APIs",
+            "pluggable issue tracker adapters beyond Linear",
+            "schema-backed `linear_graphql` startup advertisement",
+        ):
+            self.assertIn(item, text)

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import os
+import sys
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -124,3 +125,33 @@ Work on {{ issue.identifier }}
     def test_run_rejects_negative_port(self):
         with self.assertRaises(SystemExit):
             run_cli(["run", "--port", "-1"])
+
+    def test_runtime_check_runs_runtime_unittest_discovery(self):
+        calls = []
+
+        def fake_run(command):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0})()
+
+        original = cli_module.subprocess.run
+        try:
+            cli_module.subprocess.run = fake_run
+            code, _, _ = run_cli(["runtime-check"])
+        finally:
+            cli_module.subprocess.run = original
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [[sys.executable, "-m", "unittest", "discover", "-s", "tests/runtime"]])
+
+    def test_runtime_check_returns_subprocess_failure_code(self):
+        def fake_run(command):
+            return type("Completed", (), {"returncode": 7})()
+
+        original = cli_module.subprocess.run
+        try:
+            cli_module.subprocess.run = fake_run
+            code, _, _ = run_cli(["runtime-check"])
+        finally:
+            cli_module.subprocess.run = original
+
+        self.assertEqual(code, 7)
