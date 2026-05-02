@@ -20,6 +20,10 @@ def _integration_enabled() -> bool:
     return os.environ.get("HARNESS_RUN_INTEGRATION") == "1"
 
 
+def _linear_mutation_integration_enabled() -> bool:
+    return os.environ.get("HARNESS_RUN_LINEAR_MUTATION_INTEGRATION") == "1"
+
+
 class RealIntegrationProfileTests(unittest.TestCase):
     def setUp(self):
         if not _integration_enabled():
@@ -165,6 +169,25 @@ class RealIntegrationProfileTests(unittest.TestCase):
             parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=parent) as directory:
             yield Path(directory)
+
+
+class LinearMutationIntegrationProfilePlaceholderTests(unittest.TestCase):
+    def test_linear_mutation_profile_is_separately_gated_and_placeholder_only(self):
+        if not _linear_mutation_integration_enabled():
+            self.skipTest("set HARNESS_RUN_LINEAR_MUTATION_INTEGRATION=1 to evaluate the reserved Linear mutation profile")
+        required = [
+            "LINEAR_API_KEY",
+            "HARNESS_LINEAR_MUTATION_ISSUE_ID",
+            "HARNESS_LINEAR_MUTATION_TARGET_STATE",
+            "HARNESS_LINEAR_MUTATION_COMMENT_BODY",
+        ]
+        missing = [name for name in required if not os.environ.get(name)]
+        if missing:
+            self.fail(
+                "Linear mutation integration is explicitly gated and requires target variables before any future write check can run: "
+                + ", ".join(missing)
+            )
+        self.skipTest("Linear mutation smoke is reserved but not implemented until project-specific cleanup and rollback policy exists")
 
 
 class IntegrationFakeTracker:

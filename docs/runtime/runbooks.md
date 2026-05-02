@@ -54,6 +54,8 @@ Use this when a workflow or operator tool should own a Linear mutation instead o
 4. Treat write API failures as workflow failures that should be visible to operators; do not hide them behind successful dispatch.
 5. Keep real integration tests read-only unless a separate, explicitly named mutation profile and cleanup procedure is added.
 
+The mutation integration placeholder is disabled by default. It requires `HARNESS_RUN_LINEAR_MUTATION_INTEGRATION=1` plus explicit Linear target variables before any future real mutation check can run. Do not add a mutation smoke to the default `HARNESS_RUN_INTEGRATION=1` profile.
+
 ## Dashboard And API Operation
 
 Use this when observing live state or forcing an immediate poll.

@@ -54,6 +54,8 @@ Run the gated Linear integration checks when any of these change:
 
 These checks must remain read-only. If a future production check needs to mutate Linear state, add a separate explicitly named environment gate and document the cleanup procedure before enabling it.
 
+The reserved mutation gate is `HARNESS_RUN_LINEAR_MUTATION_INTEGRATION=1`. Do not use it until the target issue, target state, comment body, cleanup procedure, and rollback expectations are documented for the project. The default integration profile must stay read-only.
+
 ## Release Checklist For Scaffold Maintainers
 
 Before tagging or publishing a scaffold runtime release:

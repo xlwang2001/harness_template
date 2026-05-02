@@ -112,10 +112,37 @@ class RuntimeDocsTests(unittest.TestCase):
         for item in (
             "- [x] Persist retry queue and session metadata",
             "- [x] Add first-class tracker write APIs",
-            "pluggable issue tracker adapters beyond Linear",
+            "- [x] Defer pluggable issue tracker adapters beyond Linear",
             "schema-backed `linear_graphql` startup advertisement",
         ):
             self.assertIn(item, text)
+        self.assertNotIn("- [ ] Add pluggable issue tracker adapters beyond Linear", text)
+
+    def test_non_linear_trackers_are_deferred_for_linear_only_deployments(self):
+        root = Path(__file__).resolve().parent.parent
+        matrix = (root / "docs" / "runtime" / "spec-conformance-matrix.md").read_text(encoding="utf-8")
+        runtime_readme = (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Non-Linear adapters are deferred for Linear-only deployments", matrix)
+        self.assertIn("Linear is the supported production tracker", runtime_readme)
+        self.assertIn("GitHub Issues, Jira, or Shortcut are deferred", runtime_readme)
+
+    def test_linear_graphql_startup_advertisement_remains_schema_blocked(self):
+        root = Path(__file__).resolve().parent.parent
+        matrix = (root / "docs" / "runtime" / "spec-conformance-matrix.md").read_text(encoding="utf-8")
+        runtime_readme = (root / "docs" / "runtime" / "README.md").read_text(encoding="utf-8")
+        self.assertIn("schema-backed `linear_graphql` startup advertisement", matrix)
+        self.assertIn("no stable client-tool advertisement field", matrix)
+        self.assertIn("does not send non-schema `client_tools`, `tools`, or `dynamicTools` fields", runtime_readme)
+
+    def test_linear_mutation_profile_is_separately_gated_and_default_read_only(self):
+        root = Path(__file__).resolve().parent.parent
+        runbooks = (root / "docs" / "runtime" / "runbooks.md").read_text(encoding="utf-8")
+        checklist = (root / "docs" / "runtime" / "production-readiness-checklist.md").read_text(encoding="utf-8")
+        integration_tests = (root / "tests" / "runtime" / "test_integration_profile.py").read_text(encoding="utf-8")
+        self.assertIn("HARNESS_RUN_LINEAR_MUTATION_INTEGRATION=1", runbooks)
+        self.assertIn("HARNESS_RUN_LINEAR_MUTATION_INTEGRATION=1", checklist)
+        self.assertIn("HARNESS_RUN_LINEAR_MUTATION_INTEGRATION", integration_tests)
+        self.assertIn("The default integration profile must stay read-only", checklist)
 
     def test_tracker_write_apis_are_documented_as_explicit(self):
         root = Path(__file__).resolve().parent.parent
