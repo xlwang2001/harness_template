@@ -173,7 +173,7 @@ class _JsonLineAppServerClient:
                 "clientInfo": {
                     "name": "harness-runtime",
                     "title": "Harness Hardened Symphony Runtime",
-                    "version": "1.3.1",
+                    "version": "1.4.0",
                 },
                 "capabilities": {
                     "experimentalApi": True,

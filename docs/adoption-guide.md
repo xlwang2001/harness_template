@@ -6,10 +6,24 @@ This guide explains how to adopt the harness scaffold in an existing project.
 
 You need a Git repository, a working local setup command, at least one automated test command, Codex installed and authenticated, a supported issue tracker, and a hardened environment for running coding agents.
 
+Install the scaffold package from your private package index before adopting it:
+
+```bash
+pipx install harness-engineering-starter --index-url <PRIVATE_INDEX_URL>
+```
+
+If `pipx` is not available, use:
+
+```bash
+python -m pip install harness-engineering-starter --index-url <PRIVATE_INDEX_URL>
+```
+
+You do not need to clone the scaffold repository unless you are developing the scaffold itself.
+
 ## Initialize
 
 ```bash
-python -m harness.cli init --target /path/to/your/repo --profile cautious-linear
+harness init --target /path/to/your/repo --profile cautious-linear
 ```
 
 Inspect the generated files before committing them.
@@ -36,7 +50,7 @@ Do not commit secrets.
 ## Validate
 
 ```bash
-python -m harness.cli validate --target /path/to/your/repo
+harness validate --target /path/to/your/repo
 ```
 
 Fix errors before running the hardened runtime.
@@ -46,7 +60,7 @@ Fix errors before running the hardened runtime.
 Before the first live run, preview candidate selection without creating workspaces or launching Codex:
 
 ```bash
-python -m harness.cli dispatch-preview --workflow /path/to/your/repo/WORKFLOW.md
+harness dispatch-preview --workflow /path/to/your/repo/WORKFLOW.md
 ```
 
 Confirm the eligible issues, skipped reasons, prompt preview, and workspace paths match the intended project policy.

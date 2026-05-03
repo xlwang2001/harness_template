@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0
+
+Installable package release.
+
+### Added
+
+- Made `harness-engineering-starter` build as an installable wheel with the hardened runtime, CLI, validators, profiles, and scaffold templates included.
+- Added packaged template resources so `harness init` works after installing from a private package index without cloning this repository.
+- Added package verification coverage for building a wheel, installing it into a temporary virtual environment, and running the installed `harness` command.
+
+### Verification
+
+- The installed CLI can run `harness --help`, dry-run template initialization, create a target repository, and validate the generated target without a source checkout.
+
 ## 1.3.1
 
 Workflow YAML subset visibility release.

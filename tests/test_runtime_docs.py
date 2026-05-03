@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.4.0",
+            "Installable package release",
             "## 1.3.1",
             "Workflow YAML subset visibility release",
             "## 1.3.0",
@@ -119,8 +121,23 @@ class RuntimeDocsTests(unittest.TestCase):
     def test_package_version_is_current_release(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.3.1")
-        self.assertEqual(harness.__version__, "1.3.1")
+        self.assertEqual(pyproject["project"]["version"], "1.4.0")
+        self.assertEqual(harness.__version__, "1.4.0")
+
+    def test_installable_package_docs_and_check_exist(self):
+        root = Path(__file__).resolve().parent.parent
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        adoption = (root / "docs" / "adoption-guide.md").read_text(encoding="utf-8")
+        makefile = (root / "Makefile").read_text(encoding="utf-8")
+        pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+        for text in (readme, adoption):
+            self.assertIn("pipx install harness-engineering-starter --index-url <PRIVATE_INDEX_URL>", text)
+            self.assertIn("do not need to clone", text)
+            self.assertIn("harness init", text)
+        self.assertIn("package-check:", makefile)
+        self.assertIn("python3 -m harness.package_check", makefile)
+        self.assertIn('include = ["harness*"]', pyproject)
+        self.assertIn("template_data/**/*", pyproject)
 
     def test_runtime_support_matrix_exists_and_is_linked(self):
         root = Path(__file__).resolve().parent.parent

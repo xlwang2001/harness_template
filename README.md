@@ -21,17 +21,33 @@ The issue tracker is the control plane. The repository is the knowledge system o
 
 ## Quick Start
 
+Install the scaffold from your private package index:
+
 ```bash
-python -m harness.cli init --target /path/to/your/repo --profile cautious-linear
-python -m harness.cli validate --target /path/to/your/repo
-python -m harness.cli runtime-check
+pipx install harness-engineering-starter --index-url <PRIVATE_INDEX_URL>
+```
+
+Or with `pip`:
+
+```bash
+python -m pip install harness-engineering-starter --index-url <PRIVATE_INDEX_URL>
+```
+
+Ordinary adopters do not need to clone this scaffold repository. After installation, use the `harness` command:
+
+```bash
+harness init --target /path/to/your/repo --profile cautious-linear
+harness validate --target /path/to/your/repo
+harness runtime-check
 ```
 
 Then configure `/path/to/your/repo/WORKFLOW.md` and run the hardened runtime:
 
 ```bash
-python -m harness.cli run --workflow /path/to/your/repo/WORKFLOW.md
+harness run --workflow /path/to/your/repo/WORKFLOW.md
 ```
+
+Clone this repository only when developing the scaffold itself.
 
 ## Documentation
 

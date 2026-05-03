@@ -1,4 +1,4 @@
-.PHONY: validate test runtime-check integration-test codex-schema-test stale-design-check
+.PHONY: validate test runtime-check integration-test codex-schema-test stale-design-check package-check
 
 validate:
 	python3 -m harness.cli validate --target templates/repo
@@ -17,3 +17,6 @@ codex-schema-test:
 
 stale-design-check:
 	python3 -m unittest tests.test_stale_design
+
+package-check:
+	python3 -m harness.package_check
