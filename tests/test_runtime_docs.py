@@ -199,6 +199,17 @@ class RuntimeDocsTests(unittest.TestCase):
             self.assertIn("YAML subset", text)
             self.assertIn("anchors, aliases, merge keys, custom tags", text)
 
+    def test_generated_repo_ci_installs_harness_package_before_validation(self):
+        root = Path(__file__).resolve().parent.parent
+        for path in (
+            root / "templates" / "repo" / ".github" / "workflows" / "harness-docs.yml",
+            root / "harness" / "template_data" / "repo" / ".github" / "workflows" / "harness-docs.yml",
+        ):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("python -m pip install harness-engineering-starter", text)
+            self.assertIn("harness validate --target .", text)
+            self.assertNotIn("python -m harness.cli validate --target .", text)
+
     def test_review_packet_templates_and_docs_exist(self):
         root = Path(__file__).resolve().parent.parent
         template = root / "templates" / "repo" / "docs" / "review-packet-template.md"
