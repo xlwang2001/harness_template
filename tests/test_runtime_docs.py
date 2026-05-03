@@ -139,6 +139,16 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn('include = ["harness*"]', pyproject)
         self.assertIn("template_data/**/*", pyproject)
 
+    def test_readme_keeps_adopter_commands_separate_from_maintainer_checks(self):
+        root = Path(__file__).resolve().parent.parent
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        adopter_block = readme.split("Ordinary adopters do not need to clone", 1)[1].split("Then configure", 1)[0]
+        maintainer_block = readme.split("When maintaining this scaffold repository", 1)[1]
+        self.assertIn("harness init", adopter_block)
+        self.assertIn("harness validate", adopter_block)
+        self.assertNotIn("runtime-check", adopter_block)
+        self.assertIn("make runtime-check", maintainer_block)
+
     def test_runtime_support_matrix_exists_and_is_linked(self):
         root = Path(__file__).resolve().parent.parent
         matrix = root / "docs" / "runtime" / "support-matrix.md"

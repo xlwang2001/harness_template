@@ -38,7 +38,6 @@ Ordinary adopters do not need to clone this scaffold repository. After installat
 ```bash
 harness init --target /path/to/your/repo --profile cautious-linear
 harness validate --target /path/to/your/repo
-harness runtime-check
 ```
 
 Then configure `/path/to/your/repo/WORKFLOW.md` and run the hardened runtime:
@@ -48,6 +47,14 @@ harness run --workflow /path/to/your/repo/WORKFLOW.md
 ```
 
 Clone this repository only when developing the scaffold itself.
+
+When maintaining this scaffold repository, use the Makefile checks from a source checkout:
+
+```bash
+make test
+make runtime-check
+make package-check
+```
 
 ## Documentation
 
