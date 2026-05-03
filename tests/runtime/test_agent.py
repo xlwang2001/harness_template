@@ -177,7 +177,7 @@ class CodexAgentRunnerTests(unittest.TestCase):
             records = json.loads(record.read_text(encoding="utf-8"))
             self.assertEqual([message["method"] for message in records[:4]], ["initialize", "thread/start", "thread/name/set", "turn/start"])
             self.assertEqual(records[0]["params"]["clientInfo"]["name"], "harness-runtime")
-            self.assertEqual(records[0]["params"]["clientInfo"]["version"], "1.2.0")
+            self.assertEqual(records[0]["params"]["clientInfo"]["version"], "1.3.0")
             self.assertEqual(records[1]["params"]["cwd"], str(workspace.resolve()))
             self.assertEqual(records[1]["params"]["approvalPolicy"], "on-request")
             self.assertEqual(records[1]["params"]["sandbox"], "workspace-write")

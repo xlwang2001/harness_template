@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0
+
+Adopted example release.
+
+### Added
+
+- Added `examples/adopted-tiny-cli/`, a complete target-repository example with harness docs, workflow, skills, scripts, sample issue, sample review packet, and working CLI tests.
+- Linked the adopted example from the adoption guide.
+
+### Verification
+
+- The adopted example validates with the scaffold validators and its sample review packet passes review packet validation.
+
 ## 1.2.0
 
 Machine-checkable review packet release.

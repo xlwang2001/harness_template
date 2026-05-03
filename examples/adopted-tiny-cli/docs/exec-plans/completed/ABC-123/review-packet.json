@@ -1,0 +1,31 @@
+{
+  "issue": {
+    "identifier": "ABC-123",
+    "title": "Add --json output to report command",
+    "url": "docs/sample-issues/add-json-output.md"
+  },
+  "pull_request": {
+    "url": "local example",
+    "status": "merged in example"
+  },
+  "summary": "Added JSON output while preserving text output.",
+  "changed_files": ["tiny_cli.py", "tests/test_tiny_cli.py", "README.md"],
+  "tests": [
+    {
+      "command": "python -m unittest discover -s tests",
+      "result": "passed",
+      "notes": "Covers text and JSON output."
+    }
+  ],
+  "ci": {
+    "status": "local example"
+  },
+  "artifacts": {
+    "screenshots": [],
+    "videos": [],
+    "logs": [],
+    "metrics": []
+  },
+  "risks": [],
+  "follow_ups": []
+}

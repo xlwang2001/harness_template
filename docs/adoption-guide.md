@@ -52,3 +52,5 @@ Confirm the eligible issues, skipped reasons, prompt preview, and workspace path
 ## First Smoke Test
 
 Create a low-risk issue such as: "Update docs/README.md to add one sentence explaining the local development command." Confirm that the runtime creates a workspace, starts Codex, produces a PR or patch, and leaves a review packet.
+
+For a complete adopted target repository shape, inspect `examples/adopted-tiny-cli/`.

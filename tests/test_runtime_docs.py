@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.3.0",
+            "Adopted example release",
             "## 1.2.0",
             "Machine-checkable review packet release",
             "## 1.1.0",
@@ -115,8 +117,8 @@ class RuntimeDocsTests(unittest.TestCase):
     def test_package_version_is_1_0_0(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.2.0")
-        self.assertEqual(harness.__version__, "1.2.0")
+        self.assertEqual(pyproject["project"]["version"], "1.3.0")
+        self.assertEqual(harness.__version__, "1.3.0")
 
     def test_runtime_support_matrix_exists_and_is_linked(self):
         root = Path(__file__).resolve().parent.parent
@@ -147,7 +149,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("- [x] Priority 1: Add a human-facing runtime support matrix", todo)
         self.assertIn("- [x] Priority 2: Add a read-only dispatch preview command", todo)
         self.assertIn("- [x] Priority 3: Make review packets machine-checkable", todo)
-        self.assertIn("- [ ] Priority 4: Add a complete adopted tiny CLI target-repo example", todo)
+        self.assertIn("- [x] Priority 4: Add a complete adopted tiny CLI target-repo example", todo)
+        self.assertIn("- [ ] Priority 5: Make the `WORKFLOW.md` YAML subset visible", todo)
 
     def test_review_packet_templates_and_docs_exist(self):
         root = Path(__file__).resolve().parent.parent
