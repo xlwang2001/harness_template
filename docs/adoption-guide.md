@@ -30,6 +30,14 @@ Inspect the generated files before committing them.
 
 Before first live runtime use, review `docs/runtime/support-matrix.md` so the current Linear-first support boundary is clear.
 
+The generated GitHub Actions validation workflow installs the harness package from:
+
+```text
+git+https://github.com/xlwang2001/harness_template.git@main
+```
+
+That default tracks the latest `main` commit. For reproducible CI, set the repository variable `HARNESS_PACKAGE_SPEC` to a pinned tag, commit SHA, wheel URL, or package-index spec when your project is ready to pin.
+
 ## Fill Project-Specific Guidance
 
 Edit `AGENTS.md`, `WORKFLOW.md`, `ARCHITECTURE.md`, and the docs under `docs/`. Keep `AGENTS.md` short and put durable knowledge in the deeper docs.

@@ -8,10 +8,12 @@ on:
 jobs:
   validate-harness-docs:
     runs-on: ubuntu-latest
+    env:
+      HARNESS_PACKAGE_SPEC: ${{ vars.HARNESS_PACKAGE_SPEC || 'git+https://github.com/xlwang2001/harness_template.git@main' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install harness-engineering-starter
+      - run: python -m pip install "$HARNESS_PACKAGE_SPEC"
       - run: harness validate --target .

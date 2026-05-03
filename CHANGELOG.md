@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.1
+
+Generated workflow install-source release.
+
+### Changed
+
+- Updated the generated target-repository Harness Docs workflow to install the harness CLI from a configurable `HARNESS_PACKAGE_SPEC`.
+- Defaulted generated GitHub Actions installs to the public Git URL `git+https://github.com/xlwang2001/harness_template.git@main`, so target repositories do not need a private package index by default.
+- Kept `HARNESS_PACKAGE_SPEC` override support for adopters who prefer a pinned tag, wheel URL, or private package source.
+
+### Verification
+
+- Added regression coverage so generated workflows do not assume either an in-repo `harness.cli` module or a default package-index package.
+
 ## 1.4.0
 
 Installable package release.

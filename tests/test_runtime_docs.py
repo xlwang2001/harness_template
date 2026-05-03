@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.4.1",
+            "Generated workflow install-source release",
             "## 1.4.0",
             "Installable package release",
             "## 1.3.1",
@@ -121,8 +123,8 @@ class RuntimeDocsTests(unittest.TestCase):
     def test_package_version_is_current_release(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.4.0")
-        self.assertEqual(harness.__version__, "1.4.0")
+        self.assertEqual(pyproject["project"]["version"], "1.4.1")
+        self.assertEqual(harness.__version__, "1.4.1")
 
     def test_installable_package_docs_and_check_exist(self):
         root = Path(__file__).resolve().parent.parent
@@ -138,6 +140,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("python3 -m harness.package_check", makefile)
         self.assertIn('include = ["harness*"]', pyproject)
         self.assertIn("template_data/**/*", pyproject)
+        self.assertIn("HARNESS_PACKAGE_SPEC", adoption)
+        self.assertIn("latest `main` commit", adoption)
 
     def test_readme_keeps_adopter_commands_separate_from_maintainer_checks(self):
         root = Path(__file__).resolve().parent.parent
@@ -206,8 +210,11 @@ class RuntimeDocsTests(unittest.TestCase):
             root / "harness" / "template_data" / "repo" / ".github" / "workflows" / "harness-docs.yml",
         ):
             text = path.read_text(encoding="utf-8")
-            self.assertIn("python -m pip install harness-engineering-starter", text)
+            self.assertIn("HARNESS_PACKAGE_SPEC", text)
+            self.assertIn("git+https://github.com/xlwang2001/harness_template.git@main", text)
+            self.assertIn('python -m pip install "$HARNESS_PACKAGE_SPEC"', text)
             self.assertIn("harness validate --target .", text)
+            self.assertNotIn("python -m pip install harness-engineering-starter", text)
             self.assertNotIn("python -m harness.cli validate --target .", text)
 
     def test_review_packet_templates_and_docs_exist(self):
