@@ -91,6 +91,8 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertTrue(changelog.is_file())
         text = changelog.read_text(encoding="utf-8")
         for expected in (
+            "## 1.3.1",
+            "Workflow YAML subset visibility release",
             "## 1.3.0",
             "Adopted example release",
             "## 1.2.0",
@@ -114,11 +116,11 @@ class RuntimeDocsTests(unittest.TestCase):
         ):
             self.assertIn("CHANGELOG.md", doc.read_text(encoding="utf-8"))
 
-    def test_package_version_is_1_0_0(self):
+    def test_package_version_is_current_release(self):
         root = Path(__file__).resolve().parent.parent
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(pyproject["project"]["version"], "1.3.0")
-        self.assertEqual(harness.__version__, "1.3.0")
+        self.assertEqual(pyproject["project"]["version"], "1.3.1")
+        self.assertEqual(harness.__version__, "1.3.1")
 
     def test_runtime_support_matrix_exists_and_is_linked(self):
         root = Path(__file__).resolve().parent.parent
@@ -150,7 +152,25 @@ class RuntimeDocsTests(unittest.TestCase):
         self.assertIn("- [x] Priority 2: Add a read-only dispatch preview command", todo)
         self.assertIn("- [x] Priority 3: Make review packets machine-checkable", todo)
         self.assertIn("- [x] Priority 4: Add a complete adopted tiny CLI target-repo example", todo)
-        self.assertIn("- [ ] Priority 5: Make the `WORKFLOW.md` YAML subset visible", todo)
+        self.assertIn("- [x] Priority 5: Make the `WORKFLOW.md` YAML subset visible", todo)
+
+    def test_workflow_yaml_subset_is_documented_in_templates_and_docs(self):
+        root = Path(__file__).resolve().parent.parent
+        for path in (
+            root / "templates" / "repo" / "WORKFLOW.md",
+            root / "templates" / "symphony" / "WORKFLOW.md",
+            root / "examples" / "adopted-tiny-cli" / "WORKFLOW.md",
+        ):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("harness YAML subset", text)
+            self.assertIn("Avoid anchors, aliases, merge keys, custom tags", text)
+        for path in (
+            root / "docs" / "adoption-guide.md",
+            root / "docs" / "runtime" / "README.md",
+        ):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("YAML subset", text)
+            self.assertIn("anchors, aliases, merge keys, custom tags", text)
 
     def test_review_packet_templates_and_docs_exist(self):
         root = Path(__file__).resolve().parent.parent

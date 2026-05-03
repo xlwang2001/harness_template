@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.1
+
+Workflow YAML subset visibility release.
+
+### Added
+
+- Made the supported `WORKFLOW.md` YAML subset visible in repo and runtime workflow templates.
+- Documented unsupported YAML constructs in adoption and runtime docs.
+- Added scaffold validation warnings for anchors, aliases, merge keys, custom tags, and folded `>` scalars in workflow front matter.
+
+### Verification
+
+- Runtime behavior is unchanged; this patch release makes parser boundaries visible before unsupported YAML reaches production workflows.
+
 ## 1.3.0
 
 Adopted example release.

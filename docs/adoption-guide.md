@@ -20,6 +20,8 @@ Before first live runtime use, review `docs/runtime/support-matrix.md` so the cu
 
 Edit `AGENTS.md`, `WORKFLOW.md`, `ARCHITECTURE.md`, and the docs under `docs/`. Keep `AGENTS.md` short and put durable knowledge in the deeper docs.
 
+`WORKFLOW.md` front matter uses a deliberately small YAML subset: nested maps, `- ` lists, quoted or unquoted scalars, comments, and `|` block scalars. Avoid anchors, aliases, merge keys, custom tags, folded `>` scalars, and complex YAML expressions; `harness validate` warns when it sees unsupported constructs.
+
 ## Configure Environment
 
 ```bash

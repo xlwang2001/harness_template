@@ -1,4 +1,7 @@
 ---
+# WORKFLOW.md front matter uses the harness YAML subset:
+# nested maps, "- " lists, quoted/unquoted scalars, comments, and | block scalars.
+# Avoid anchors, aliases, merge keys, custom tags, folded > scalars, and complex YAML expressions.
 tracker:
   kind: linear
   api_key: $LINEAR_API_KEY

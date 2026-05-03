@@ -10,6 +10,7 @@ import harness.cli as cli_module
 from harness.cli import main
 from harness.runtime.models import Issue, RuntimeConfig
 from harness.runtime.preview import DispatchPreview, CandidatePreview
+from harness.workflow_validator import validate_workflow
 
 
 def run_cli(args):
@@ -70,6 +71,50 @@ class CliTests(unittest.TestCase):
             (tmp_path / "WORKFLOW.md").write_text("not front matter", encoding="utf-8")
             code, _, _ = run_cli(["validate", "--target", str(tmp_path)])
             self.assertEqual(code, 1)
+
+    def test_workflow_validator_warns_on_unsupported_yaml_constructs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp_path = Path(directory)
+            (tmp_path / "WORKFLOW.md").write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: &linear_key "$LINEAR_API_KEY"
+  project_slug: *linear_key
+  active_states:
+    - Todo
+  terminal_states:
+    - Done
+workspace:
+  root: ./workspaces
+agent:
+  max_concurrent_agents: 1
+codex:
+  command: >
+    codex app-server
+  approval_policy: !policy on-request
+<<: {}
+---
+Work on {{ issue.identifier }}.
+Title: {{ issue.title }}
+Description: {{ issue.description }}
+""",
+                encoding="utf-8",
+            )
+
+            messages = validate_workflow(tmp_path)
+
+            warnings = [message.message for message in messages if message.level == "WARNING"]
+            errors = [message.message for message in messages if message.level == "ERROR"]
+            self.assertEqual(errors, [])
+            for expected in (
+                "YAML anchors",
+                "YAML aliases",
+                "YAML merge keys",
+                "YAML custom tags",
+                "YAML folded block scalars",
+            ):
+                self.assertTrue(any(expected in warning for warning in warnings), warnings)
 
     def test_run_reports_missing_workflow(self):
         with tempfile.TemporaryDirectory() as directory:

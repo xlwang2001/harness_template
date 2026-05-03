@@ -60,6 +60,8 @@ Use `docs/runtime/production-readiness-checklist.md` before first production use
 
 The standard-library parser intentionally supports a documented YAML subset: nested maps by indentation, lists with `- ` items, quoted or unquoted scalars, integers, booleans, null values, comments, blank lines, and `|` block scalars. Unsupported YAML features should fail parsing instead of being guessed. This subset covers scaffold `WORKFLOW.md` templates while keeping dependency policy explicit.
 
+Do not use YAML anchors, aliases, merge keys, custom tags, folded `>` scalars, or complex YAML expressions in `WORKFLOW.md`. `harness validate` reports warnings when it sees these constructs so adopters can replace them before runtime parsing or future template updates become surprising.
+
 ## Reference Material
 
 The upstream Symphony repository remains useful for its service specification and `.codex/skills`. Its implementation code is not used as this runtime's execution path.
