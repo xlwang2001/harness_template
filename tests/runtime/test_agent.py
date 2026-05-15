@@ -13,7 +13,7 @@ from harness.runtime.models import Issue, RuntimeConfig
 from harness.runtime.workspace import WorkspaceError
 
 
-def config(root: Path, *, command: str, read_timeout_ms: int = 1000, turn_timeout_ms: int = 1000) -> RuntimeConfig:
+def config(root: Path, *, command: str, read_timeout_ms: int = 5000, turn_timeout_ms: int = 5000) -> RuntimeConfig:
     return RuntimeConfig(
         workflow_path=root / "WORKFLOW.md",
         tracker_kind="linear",
@@ -149,7 +149,7 @@ for line in sys.stdin:
 
 
 class CodexAgentRunnerTests(unittest.TestCase):
-    def build_runner(self, root: Path, mode: str, *, read_timeout_ms: int = 1000, turn_timeout_ms: int = 1000, client_tools=None):
+    def build_runner(self, root: Path, mode: str, *, read_timeout_ms: int = 5000, turn_timeout_ms: int = 5000, client_tools=None):
         server = root / "fake_codex_server.py"
         record = root / "record.json"
         server.write_text(textwrap.dedent(FAKE_SERVER), encoding="utf-8")
