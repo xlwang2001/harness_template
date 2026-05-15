@@ -12,6 +12,7 @@ tracker:
   terminal_states:
     - Done
     - Cancelled
+  handoff_state: "Human Review"
 
 workspace:
   root: "/tmp/adopted-tiny-cli-workspaces"

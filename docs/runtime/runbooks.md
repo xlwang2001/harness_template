@@ -39,6 +39,7 @@ Use this table to choose the first recovery action.
 | Running work stops after tracker edit | Issue became terminal or non-active | Confirm the tracker state change was intentional; terminal states clean workspaces, non-active states preserve them. |
 | Repeated retries | Codex failure, hook failure, timeout, or tracker candidate fetch issue | Check latest run attempt status and retry error through `/api/v1/<issue_identifier>`. |
 | Retries disappear after restart | No `runtime_state.file` configured, or retry persistence disabled | Configure `runtime_state.file` if retry/session metadata should survive operator restarts. |
+| Successful work is picked up again | No `tracker.handoff_state`, or the handoff state is still listed in `active_states` | Configure `tracker.handoff_state` as a scalar string and keep that state out of `active_states`. |
 | Workspace hook hangs | Hook timeout too high or shell command waiting for input | Keep hooks non-interactive and tune `hooks.timeout_ms`. |
 | User input requested by Codex | Runtime policy treats user input required as a run failure | Update the issue or repository instructions so the agent can proceed without waiting. |
 
@@ -59,7 +60,7 @@ The preview loads runtime config, fetches candidates, computes eligibility and d
 Use this when a workflow or operator tool should own a Linear mutation instead of asking the coding agent to update the issue.
 
 1. Prefer read-only scheduler behavior unless there is a concrete workflow reason to write tracker data from runtime-owned code.
-2. Use `add_comment` for explicit operator-visible notes, `transition_issue` for state handoff, and `record_pull_request` for PR metadata attachments.
+2. Use `add_comment` for explicit operator-visible notes, `transition_issue` for state handoff, and `record_pull_request` for PR metadata attachments. The built-in successful-run handoff uses `transition_issue` when `tracker.handoff_state` is configured.
 3. Keep credentials least-privilege and scoped to the configured Linear project.
 4. Treat write API failures as workflow failures that should be visible to operators; do not hide them behind successful dispatch.
 5. Keep real integration tests read-only unless a separate, explicitly named mutation profile and cleanup procedure is added.

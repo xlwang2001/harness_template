@@ -22,6 +22,7 @@ def config(root: Path) -> RuntimeConfig:
         tracker_endpoint="https://api.linear.app/graphql",
         tracker_api_key=SECRET,
         tracker_project_slug="project",
+        tracker_handoff_state=None,
         active_states=("Todo", "In Progress"),
         terminal_states=("Done", "Cancelled"),
         polling_interval_ms=30000,

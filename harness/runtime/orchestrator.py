@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timezone
 from threading import RLock
 from typing import Any, Mapping, Protocol
@@ -189,6 +190,7 @@ class Orchestrator:
             if not emitted_via_callback:
                 for event in result.events:
                     self.record_agent_event(issue.id, event)
+            self._transition_to_handoff_state(issue)
             emit_runtime_log(
                 self.logger,
                 "agent_session_completed",
@@ -231,6 +233,27 @@ class Orchestrator:
             )
         return self.agent_runner.run_turn(issue, prompt, workspace_path, attempt, on_event=on_event)
 
+    def _transition_to_handoff_state(self, issue: Issue) -> None:
+        handoff_state = self.config.tracker_handoff_state
+        if not handoff_state:
+            return
+        result = self.tracker.transition_issue(issue.id, handoff_state)
+        emit_runtime_log(
+            self.logger,
+            "issue_handoff_transitioned",
+            issue_id=issue.id,
+            issue_identifier=issue.identifier,
+            state=handoff_state,
+            success=result.success,
+            secrets=(self.config.tracker_api_key,),
+        )
+        if not result.success:
+            raise TrackerError(f"handoff_transition_failed state={handoff_state}")
+        with self._lock:
+            entry = self.state.running.get(issue.id)
+            if entry is not None:
+                entry.issue = replace(entry.issue, state=handoff_state)
+
     def _should_continue_issue(self, issue_id: str) -> bool:
         refreshed = self.tracker.fetch_issue_states_by_ids([issue_id])
         issue = next((item for item in refreshed if item.id == issue_id), None)
@@ -268,7 +291,8 @@ class Orchestrator:
                     issue_identifier=entry.issue.identifier,
                     secrets=(self.config.tracker_api_key,),
                 )
-                self.schedule_retry(entry.issue, attempt=1, error=None, continuation=True)
+                if not self.config.tracker_handoff_state and self.config.is_active_state(entry.issue.state):
+                    self.schedule_retry(entry.issue, attempt=1, error=None, continuation=True)
             else:
                 self._record_attempt_locked(entry, status=self._attempt_status_for_error(error), error=error)
                 emit_runtime_log(

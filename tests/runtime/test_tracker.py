@@ -16,6 +16,7 @@ def config(**overrides):
         "tracker_endpoint": "https://api.linear.app/graphql",
         "tracker_api_key": "token",
         "tracker_project_slug": "project",
+        "tracker_handoff_state": None,
         "active_states": ("Todo",),
         "terminal_states": ("Done",),
         "polling_interval_ms": 30000,

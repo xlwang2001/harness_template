@@ -181,6 +181,7 @@ class _JsonLineAppServerClient:
             },
             timeout_ms=self.read_timeout_ms,
         )
+        self.write_message({"jsonrpc": "2.0", "method": "initialized"})
 
     def create_thread(self, issue: Issue, workspace_path: Path) -> str:
         result = self.request(
@@ -195,14 +196,17 @@ class _JsonLineAppServerClient:
             timeout_ms=self.read_timeout_ms,
         )
         thread_id = _extract_identifier(result, ("thread_id", "threadId", "id"), nested=("thread", "session"))
-        self.request(
-            "thread/name/set",
-            {
-                "threadId": thread_id,
-                "name": f"{issue.identifier}: {issue.title}",
-            },
-            timeout_ms=self.read_timeout_ms,
-        )
+        try:
+            self.request(
+                "thread/name/set",
+                {
+                    "threadId": thread_id,
+                    "name": f"{issue.identifier}: {issue.title}",
+                },
+                timeout_ms=self.read_timeout_ms,
+            )
+        except AgentRunnerError as exc:
+            self.emit({"event": "thread_name_set_failed", "thread_id": thread_id, "message": str(exc)})
         return thread_id
 
     def start_turn(self, issue: Issue, prompt: str, workspace_path: Path, thread_id: str, attempt: int | None) -> str:
@@ -311,10 +315,10 @@ class _JsonLineAppServerClient:
             if message.get("id") != request_id:
                 continue
             if message.get("error"):
-                raise AgentRunnerError("response_error")
+                raise AgentRunnerError(f"response_error method={method} error={json.dumps(message.get('error'), sort_keys=True)}")
             result = message.get("result")
             if not isinstance(result, Mapping):
-                raise AgentRunnerError("response_error")
+                raise AgentRunnerError(f"response_error method={method} result={json.dumps(result, sort_keys=True)}")
             return result
 
     def write_message(self, message: Mapping[str, Any]) -> None:

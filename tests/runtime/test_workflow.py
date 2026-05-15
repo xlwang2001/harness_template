@@ -55,6 +55,7 @@ class WorkflowTests(unittest.TestCase):
             config = resolve_config(workflow)
             self.assertEqual(config.tracker_api_key, "token")
             self.assertEqual(config.tracker_project_slug, "project")
+            self.assertIsNone(config.tracker_handoff_state)
             self.assertEqual(config.max_concurrent_agents, 2)
             self.assertTrue(config.workspace_root.is_absolute())
             self.assertFalse(config.server_enabled)
@@ -67,6 +68,47 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(config.runtime_state_persist_retries)
             self.assertFalse(config.runtime_state_persist_sessions)
             validate_dispatch_config(config)
+
+    def test_handoff_state_parses_as_scalar_string(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+  handoff_state: "Human Review"
+codex:
+  command: "true"
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            config = resolve_config(load_workflow(path))
+            self.assertEqual(config.tracker_handoff_state, "Human Review")
+
+    def test_handoff_state_rejects_list_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "WORKFLOW.md"
+            path.write_text(
+                """---
+tracker:
+  kind: linear
+  api_key: token
+  project_slug: project
+  handoff_state:
+    - Human Review
+codex:
+  command: "true"
+---
+Issue {{ issue.identifier }}
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigValidationError, "tracker.handoff_state"):
+                resolve_config(load_workflow(path))
 
     def test_logging_config_parses_level_console_and_relative_file(self):
         with tempfile.TemporaryDirectory() as directory:

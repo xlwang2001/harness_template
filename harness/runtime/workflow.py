@@ -216,6 +216,7 @@ def resolve_config(workflow: WorkflowDefinition) -> RuntimeConfig:
         tracker_endpoint=str(tracker.get("endpoint") or "https://api.linear.app/graphql"),
         tracker_api_key=api_key,
         tracker_project_slug=project_slug,
+        tracker_handoff_state=_optional_scalar_str(tracker.get("handoff_state"), "tracker.handoff_state"),
         active_states=tuple(_list(tracker.get("active_states"), ["Todo", "In Progress"])),
         terminal_states=tuple(_list(tracker.get("terminal_states"), ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"])),
         polling_interval_ms=_positive_int(polling.get("interval_ms"), 30000, "polling.interval_ms"),
@@ -305,6 +306,15 @@ def _list(value: Any, default: list[str]) -> list[str]:
 
 def _optional_str(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _optional_scalar_str(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        raise ConfigValidationError(f"{field} must be a scalar string")
+    text = str(value).strip()
+    return text or None
 
 
 def _bool(value: Any, default: bool) -> bool:

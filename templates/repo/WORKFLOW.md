@@ -10,6 +10,7 @@ tracker:
 {{ profile.active_states_yaml }}
   terminal_states:
 {{ profile.terminal_states_yaml }}
+  handoff_state: "{{ profile.human_review_state }}"
 
 workspace:
   root: "{{ profile.workspace_root }}"

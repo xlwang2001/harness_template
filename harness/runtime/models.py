@@ -1,4 +1,4 @@
-"""Domain models for the hardened Symphony runtime."""
+"""Domain models for the hardened workflow runtime."""
 
 from __future__ import annotations
 
@@ -76,6 +76,7 @@ class RuntimeConfig:
     tracker_endpoint: str
     tracker_api_key: str | None
     tracker_project_slug: str | None
+    tracker_handoff_state: str | None
     active_states: tuple[str, ...]
     terminal_states: tuple[str, ...]
     polling_interval_ms: int

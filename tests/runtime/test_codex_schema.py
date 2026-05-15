@@ -86,6 +86,7 @@ class CodexSchemaTests(unittest.TestCase):
 
     def test_runner_envelopes_match_generated_schema(self):
         schema_dir = _schema_dir(self)
+        client_notification = _load_validator(self, schema_dir / "ClientNotification.json")
         client_request = _load_validator(self, schema_dir / "ClientRequest.json")
         jsonrpc_response = _load_validator(self, schema_dir / "JSONRPCResponse.json")
         command_approval_response = _load_validator(self, schema_dir / "CommandExecutionRequestApprovalResponse.json")
@@ -103,7 +104,10 @@ class CodexSchemaTests(unittest.TestCase):
         for message in records:
             if "method" in message:
                 self.assertNotEqual(message["method"], "shutdown")
-                _assert_valid(self, client_request, message)
+                if "id" in message:
+                    _assert_valid(self, client_request, message)
+                else:
+                    _assert_valid(self, client_notification, message)
                 continue
             _assert_valid(self, jsonrpc_response, message)
             if message.get("id") == "approval-1":

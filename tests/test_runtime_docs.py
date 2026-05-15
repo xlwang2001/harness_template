@@ -307,7 +307,8 @@ class RuntimeDocsTests(unittest.TestCase):
         for expected in ("add_comment", "transition_issue", "record_pull_request"):
             self.assertIn(expected, runtime_readme)
             self.assertIn(expected, runbooks)
-        self.assertIn("orchestrator does not call these by default", runtime_readme)
+        self.assertIn("When `tracker.handoff_state` is set", runtime_readme)
+        self.assertIn("built-in successful-run handoff uses `transition_issue`", runbooks)
         self.assertIn("Keep real integration tests read-only", runbooks)
 
     def test_runtime_state_persistence_is_documented(self):

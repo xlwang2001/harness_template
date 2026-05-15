@@ -44,6 +44,8 @@ Edit `AGENTS.md`, `WORKFLOW.md`, `ARCHITECTURE.md`, and the docs under `docs/`. 
 
 `WORKFLOW.md` front matter uses a deliberately small YAML subset: nested maps, `- ` lists, quoted or unquoted scalars, comments, and `|` block scalars. Avoid anchors, aliases, merge keys, custom tags, folded `>` scalars, and complex YAML expressions; `harness validate` warns when it sees unsupported constructs.
 
+Set `tracker.handoff_state` to the exact Linear workflow state that should receive completed agent work, for example `handoff_state: "Human Review"`. This value is a single scalar string, not a list. Keep the handoff state out of `active_states` so the runtime does not immediately pick the issue up again after a successful handoff.
+
 ## Configure Environment
 
 ```bash
@@ -75,6 +77,6 @@ Confirm the eligible issues, skipped reasons, prompt preview, and workspace path
 
 ## First Smoke Test
 
-Create a low-risk issue such as: "Update docs/README.md to add one sentence explaining the local development command." Confirm that the runtime creates a workspace, starts Codex, produces a PR or patch, and leaves a review packet.
+Create a low-risk issue such as: "Update docs/README.md to add one sentence explaining the local development command." Confirm that the runtime creates a workspace, starts Codex, produces a PR or patch, leaves a review packet, and transitions the issue to the configured handoff state.
 
 For a complete adopted target repository shape, inspect `examples/adopted-tiny-cli/`.

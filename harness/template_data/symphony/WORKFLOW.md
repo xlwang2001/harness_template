@@ -16,6 +16,7 @@ tracker:
     - Cancelled
     - Canceled
     - Duplicate
+  handoff_state: "Human Review"
 
 workspace:
   root: "$SYMPHONY_WORKSPACE_ROOT"

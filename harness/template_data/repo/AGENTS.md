@@ -5,7 +5,7 @@ This file is the map, not the manual.
 Start here:
 
 - `docs/README.md` for the project knowledge map.
-- `WORKFLOW.md` for Symphony runtime expectations.
+- `WORKFLOW.md` for hardened runtime expectations.
 - `ARCHITECTURE.md` for the current system shape.
 - `docs/QUALITY.md` for required tests and proof of work.
 - `docs/SECURITY.md` before touching secrets, auth, permissions, or deployment.

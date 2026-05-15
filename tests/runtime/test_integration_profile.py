@@ -276,6 +276,7 @@ def _runtime_config(root: Path, command: str) -> RuntimeConfig:
         tracker_endpoint="https://api.linear.app/graphql",
         tracker_api_key=os.environ.get("LINEAR_API_KEY") or "integration-placeholder",
         tracker_project_slug=os.environ.get("LINEAR_PROJECT_SLUG") or "integration-placeholder",
+        tracker_handoff_state=None,
         active_states=("Todo", "In Progress"),
         terminal_states=("Done", "Cancelled", "Canceled"),
         polling_interval_ms=30000,

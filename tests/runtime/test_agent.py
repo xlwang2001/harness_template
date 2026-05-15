@@ -20,6 +20,7 @@ def config(root: Path, *, command: str, read_timeout_ms: int = 1000, turn_timeou
         tracker_endpoint="https://api.linear.app/graphql",
         tracker_api_key="token",
         tracker_project_slug="project",
+        tracker_handoff_state=None,
         active_states=("Todo", "In Progress"),
         terminal_states=("Done", "Cancelled"),
         polling_interval_ms=30000,
@@ -83,6 +84,9 @@ for line in sys.stdin:
     elif method == "thread/start":
         send({"jsonrpc": "2.0", "id": request_id, "result": {"thread": {"id": "thread-1"}}})
     elif method == "thread/name/set":
+        if mode == "name_set_fails":
+            send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "thread not found"}})
+            continue
         send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif method == "turn/start":
         turn_count += 1
@@ -105,6 +109,8 @@ for line in sys.stdin:
             send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
         elif mode == "multi_turn":
             send({"event": "notification", "message": f"working {turn_count}"})
+            send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
+        elif mode == "name_set_fails":
             send({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": turn_id, "items": [], "status": "completed"}}})
         elif mode == "failure":
             send({"method": "error", "params": {"threadId": "thread-1", "turnId": turn_id, "willRetry": False, "error": {"message": "bad turn"}}})
@@ -175,16 +181,16 @@ class CodexAgentRunnerTests(unittest.TestCase):
             self.assertEqual(events[0]["turn_id"], "turn-1")
             self.assertEqual(events[3]["rateLimits"], {"primary": {"remaining": 10}})
             records = json.loads(record.read_text(encoding="utf-8"))
-            self.assertEqual([message["method"] for message in records[:4]], ["initialize", "thread/start", "thread/name/set", "turn/start"])
+            self.assertEqual([message["method"] for message in records[:5]], ["initialize", "initialized", "thread/start", "thread/name/set", "turn/start"])
             self.assertEqual(records[0]["params"]["clientInfo"]["name"], "harness-runtime")
             self.assertEqual(records[0]["params"]["clientInfo"]["version"], "1.4.1")
-            self.assertEqual(records[1]["params"]["cwd"], str(workspace.resolve()))
-            self.assertEqual(records[1]["params"]["approvalPolicy"], "on-request")
-            self.assertEqual(records[1]["params"]["sandbox"], "workspace-write")
-            self.assertEqual(records[2]["params"]["name"], "ABC-1: Test issue")
-            self.assertEqual(records[3]["params"]["input"], [{"type": "text", "text": "Do the work"}])
-            self.assertEqual(records[3]["params"]["threadId"], "thread-1")
-            self.assertEqual(records[3]["params"]["sandboxPolicy"], {"type": "workspaceWrite"})
+            self.assertEqual(records[2]["params"]["cwd"], str(workspace.resolve()))
+            self.assertEqual(records[2]["params"]["approvalPolicy"], "on-request")
+            self.assertEqual(records[2]["params"]["sandbox"], "workspace-write")
+            self.assertEqual(records[3]["params"]["name"], "ABC-1: Test issue")
+            self.assertEqual(records[4]["params"]["input"], [{"type": "text", "text": "Do the work"}])
+            self.assertEqual(records[4]["params"]["threadId"], "thread-1")
+            self.assertEqual(records[4]["params"]["sandboxPolicy"], {"type": "workspaceWrite"})
 
     def test_protocol_continuation_turns_reuse_thread_and_send_continuation_prompt(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -213,6 +219,18 @@ class CodexAgentRunnerTests(unittest.TestCase):
             self.assertEqual(turn_starts[1]["params"]["threadId"], "thread-1")
             self.assertEqual(turn_starts[0]["params"]["input"], [{"type": "text", "text": "Do the work"}])
             self.assertEqual(turn_starts[1]["params"]["input"], [{"type": "text", "text": "Continue from prior work"}])
+
+    def test_protocol_thread_name_failure_does_not_abort_turn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner, workspace, _ = self.build_runner(root, "name_set_fails")
+            events = []
+
+            result = runner.run_turn(issue(), "Do the work", workspace, on_event=events.append)
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.session_id, "thread-1-turn-1")
+            self.assertIn("thread_name_set_failed", [event["event"] for event in events])
 
     def test_protocol_turn_failure_maps_to_runner_error(self):
         with tempfile.TemporaryDirectory() as directory:

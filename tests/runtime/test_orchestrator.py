@@ -10,7 +10,7 @@ from pathlib import Path
 from harness.runtime.agent import AgentRunnerError, AgentRunResult
 from harness.runtime.models import BlockerRef, Issue, RetryEntry, RunAttemptRecord, RuntimeConfig, RunningEntry
 from harness.runtime.orchestrator import Orchestrator
-from harness.runtime.tracker import TrackerError
+from harness.runtime.tracker import TrackerError, TrackerWriteResult
 from harness.runtime.workspace import WorkspaceManager
 
 
@@ -33,6 +33,7 @@ def config(root: Path) -> RuntimeConfig:
         tracker_endpoint="https://api.linear.app/graphql",
         tracker_api_key="token",
         tracker_project_slug="project",
+        tracker_handoff_state=None,
         active_states=("Todo", "In Progress"),
         terminal_states=("Done", "Cancelled"),
         polling_interval_ms=30000,
@@ -62,6 +63,7 @@ class FakeTracker:
         self.state_fetches = 0
         self.terminal_fetches = 0
         self.terminal_state_names = []
+        self.transitions = []
 
     def fetch_candidate_issues(self):
         self.candidate_fetches += 1
@@ -76,6 +78,10 @@ class FakeTracker:
         self.state_fetches += 1
         return list(self.states)
 
+    def transition_issue(self, issue_id, state_name):
+        self.transitions.append((issue_id, state_name))
+        return TrackerWriteResult(id=issue_id, success=True)
+
 
 class SequenceStateTracker(FakeTracker):
     def __init__(self, candidates=None, state_batches=None):
@@ -87,6 +93,12 @@ class SequenceStateTracker(FakeTracker):
         if not self.state_batches:
             return []
         return list(self.state_batches.pop(0))
+
+
+class FailingTransitionTracker(FakeTracker):
+    def transition_issue(self, issue_id, state_name):
+        self.transitions.append((issue_id, state_name))
+        return TrackerWriteResult(id=issue_id, success=False)
 
 
 class FailingTerminalTracker(FakeTracker):
@@ -217,6 +229,38 @@ class OrchestratorTests(unittest.TestCase):
             orchestrator.tick_once()
             self.assertEqual(len(runner.prompts), 1)
             self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+
+    def test_successful_run_transitions_to_handoff_state_without_continuation_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-35", state="Todo")
+            cfg = RuntimeConfig(**{**config(root).__dict__, "tracker_handoff_state": "Human Review"})
+            tracker = FakeTracker(candidates=[candidate])
+            runner = FakeRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual(tracker.transitions, [(candidate.id, "Human Review")])
+            self.assertEqual(len(runner.prompts), 1)
+            self.assertNotIn(candidate.id, orchestrator.state.retry_attempts)
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].status, "succeeded")
+
+    def test_failed_handoff_transition_records_failed_attempt_and_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = issue("ABC-36", state="Todo")
+            cfg = RuntimeConfig(**{**config(root).__dict__, "tracker_handoff_state": "Human Review"})
+            tracker = FailingTransitionTracker(candidates=[candidate])
+            runner = FakeRunner()
+            orchestrator = Orchestrator(cfg, tracker, WorkspaceManager(cfg), runner, "Work on {{ issue.identifier }}", executor=InlineExecutor())
+
+            orchestrator.tick_once()
+
+            self.assertEqual(tracker.transitions, [(candidate.id, "Human Review")])
+            self.assertIn(candidate.id, orchestrator.state.retry_attempts)
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].status, "failed")
+            self.assertEqual(orchestrator.state.last_attempts[candidate.id].error, "handoff_transition_failed state=Human Review")
 
     def test_worker_continues_on_same_session_while_issue_remains_active(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -528,6 +572,7 @@ class OrchestratorTests(unittest.TestCase):
                 tracker_endpoint="https://api.linear.app/graphql",
                 tracker_api_key="token",
                 tracker_project_slug="project",
+                tracker_handoff_state=None,
                 active_states=("Ready",),
                 terminal_states=("Done",),
                 polling_interval_ms=1234,
